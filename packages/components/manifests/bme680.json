@@ -1,0 +1,21 @@
+{
+  "id": "bme680",
+  "bus": "i2c",
+  "addresses": ["0x76", "0x77"],
+  "params": [
+    { "key": "oversampling_temp", "type": "enum", "options": [1, 2, 4, 8, 16], "default": 2 },
+    { "key": "oversampling_hum", "type": "enum", "options": [1, 2, 4, 8, 16], "default": 1 },
+    { "key": "warmup_ms", "type": "uint16", "default": 300 }
+  ],
+  "outputs": [
+    { "id": "temperature", "unit": "°C", "type": "float" },
+    { "id": "humidity", "unit": "%RH", "type": "float" },
+    { "id": "pressure", "unit": "hPa", "type": "float" },
+    { "id": "gas_resistance", "unit": "Ω", "type": "uint32" }
+  ],
+  "power": {
+    "active_ua": 3600,
+    "sleep_ua": 0.15,
+    "measurement_ms": 189
+  }
+}

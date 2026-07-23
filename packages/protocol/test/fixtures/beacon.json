@@ -1,0 +1,12 @@
+{
+  "description": "Minimal BEACON frame, no payload, broadcast. Shared fixture for TS and C++ header/CRC tests — CRC16/CCITT-FALSE (poly 0x1021, init 0xFFFF) computed over header+payload.",
+  "header": {
+    "type": "0x01",
+    "srcId": "0x0001",
+    "dstId": "0xFFFF",
+    "seq": "0x00",
+    "flags": "0x00"
+  },
+  "payload_hex": "",
+  "wire_hex": "4B010001FFFF000087B1"
+}

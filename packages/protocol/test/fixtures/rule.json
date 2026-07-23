@@ -1,0 +1,13 @@
+{
+  "description": "Example rule CBOR payload with integer keys, matching ARCHITECTURE.md §5.",
+  "rule": {
+    "src_sensor_id": 10,
+    "op": "gt",
+    "threshold": 25.5,
+    "hysteresis": 0.5,
+    "debounce_ms": 5000,
+    "action_id": 3,
+    "action_param": 1
+  },
+  "wire_map": { "1": 10, "2": 0, "3": 25.5, "4": 0.5, "5": 5000, "6": 3, "7": 1 }
+}

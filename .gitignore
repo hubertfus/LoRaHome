@@ -1,0 +1,25 @@
+# Node / pnpm
+node_modules/
+dist/
+build/
+.pnpm-store/
+*.tsbuildinfo
+.env
+.env.local
+
+# SQLite
+*.sqlite
+*.sqlite-journal
+*.db
+
+# PlatformIO / ESP-IDF
+.pio/
+.vscode/
+sdkconfig
+sdkconfig.old
+managed_components/
+build/
+
+# OS
+.DS_Store
+Thumbs.db

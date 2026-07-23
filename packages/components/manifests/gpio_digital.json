@@ -1,0 +1,18 @@
+{
+  "id": "gpio_digital",
+  "bus": "gpio",
+  "params": [
+    { "key": "pin", "type": "uint8", "default": 4 },
+    { "key": "pull", "type": "enum", "options": ["none", "up", "down"], "default": "none" },
+    { "key": "active_low", "type": "bool", "default": false },
+    { "key": "warmup_ms", "type": "uint16", "default": 0 }
+  ],
+  "outputs": [
+    { "id": "state", "unit": "", "type": "bool" }
+  ],
+  "power": {
+    "active_ua": 5,
+    "sleep_ua": 0,
+    "measurement_ms": 1
+  }
+}

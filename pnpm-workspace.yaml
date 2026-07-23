@@ -1,0 +1,5 @@
+packages:
+  - "packages/protocol"
+  - "packages/components"
+  - "packages/host"
+  - "packages/web"

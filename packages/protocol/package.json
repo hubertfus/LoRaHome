@@ -1,0 +1,25 @@
+{
+  "name": "@lorahome/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Frame header format, frame types, and field-name <-> CBOR integer-key mapping shared by host and firmware.",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "node --test dist/test/*.test.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "cbor-x": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "rimraf": "^6.0.0",
+    "typescript": "^5.5.0"
+  }
+}

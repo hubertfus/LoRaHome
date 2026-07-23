@@ -1,0 +1,12 @@
+{
+  "name": "lorahome-common",
+  "version": "0.1.0",
+  "description": "Shared code between the Bridge and Node firmware: ITransport, wire protocol (frame header/CRC16), SLIP framing, and the local rule evaluator. Mirrors packages/protocol so both languages enforce the same wire contract.",
+  "build": {
+    "srcDir": "src",
+    "includeDir": "include"
+  },
+  "dependencies": {
+    "jgromes/RadioLib": "^6.4.0"
+  }
+}

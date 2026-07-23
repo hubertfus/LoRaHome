@@ -1,0 +1,32 @@
+{
+  "name": "@lorahome/host",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fastify API, SQLite state store, cross-device rule engine, Graph→CBOR compiler, and duty cycle guard.",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/src/index.js",
+    "test": "node --test dist/test/*.test.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@lorahome/components": "workspace:*",
+    "@lorahome/protocol": "workspace:*",
+    "cbor-x": "^1.6.0",
+    "fastify": "^4.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "rimraf": "^6.0.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}
