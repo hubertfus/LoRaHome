@@ -235,6 +235,27 @@ test('parses the METRICS: block out of a commit message', () => {
   });
 });
 
+test('non-numeric METRICS entries are skipped, not parsed as NaN', () => {
+  // `compile.flags : -std=c11 -Wall` begins with a '-', which a looser pattern
+  // reads as a number and files as NaN — which then appears in release notes
+  // as a metric with a NaN trend.
+  const message = [
+    'feat: x',
+    '',
+    'METRICS:',
+    '  compile.flags            : -std=c11 -Wall -Wextra',
+    '  targets.compiled_clean   : 2/3',
+    '  bench.real               : 12.5 ms',
+    '  bench.absent             : NOT MEASURED',
+    'ENV:',
+  ].join('\n');
+
+  assert.deepEqual(parseCommitMetricsBlock(message), {
+    'targets.compiled_clean': 2,
+    'bench.real': 12.5,
+  });
+});
+
 test('formats a clean run and a failing run readably', () => {
   const clean = evaluateGate(parseMetrics('LH_METRIC bench.a value=1 budget=2'), {});
   assert.match(formatGateResult(clean), /^OK — 1 metrics/);

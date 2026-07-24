@@ -310,8 +310,13 @@ export function parseCommitMetricsBlock(commitMessage: string): Baseline {
     if (inBlock) {
       // The block ends at the next top-level section (ENV:, BASELINE:, ...).
       if (/^\S/.test(line)) break;
-      const match = line.match(/^\s+([\w.]+)\s*:\s*([-\d.]+)/);
-      if (match) result[match[1]!] = Number(match[2]);
+      // Require a digit: `compile.flags : -std=c11 -Wall` starts with a `-` and
+      // would otherwise parse as NaN and land in the trend table as a metric.
+      const match = line.match(/^\s+([\w.]+)\s*:\s*(-?\d[\d.]*)/);
+      if (match) {
+        const value = Number(match[2]);
+        if (Number.isFinite(value)) result[match[1]!] = value;
+      }
     }
   }
   return result;

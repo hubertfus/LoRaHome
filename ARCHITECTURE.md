@@ -49,16 +49,46 @@ Reasoning: LoRa P2P is today's choice (range, power efficiency, no infrastructur
 
 ### 3.1 Header (8 bytes, fixed size)
 
-| Offset | Size | Field | Description |
-|--------|------|-------|-------------|
-| `0` | 1B | Magic/Ver | `0x4B` (`K`), identifies the KNI protocol and version |
-| `1` | 1B | Frame type | see table below |
-| `2-3` | 2B | Src ID | sender address |
-| `4-5` | 2B | Dst ID | recipient address, `0xFFFF` = broadcast |
-| `6` | 1B | Seq | sequence number — dedupe + ACK correlation |
-| `7` | 1B | Flags | bitmask: `ACK_REQ`, `FRAG`, `LAST`, `ENCR` |
+> **Single source of truth.** This table is documentation; the authority is
+> `HEADER_LAYOUT` in [`packages/protocol/src/frame.ts`](packages/protocol/src/frame.ts).
+> The TypeScript codec is built from it at module load, and
+> `firmware/common/include/lorahome/protocol_generated.h` is emitted from it by
+> `pnpm gen:c`. Nothing in either language may hardcode an offset. `pnpm gen:c --check`
+> fails CI if the generated header drifts from the schema.
+
+| Offset | Size | Field | Byte order | Description |
+|--------|------|-------|------------|-------------|
+| `0` | 1B | Magic/Ver | — | `0x4B` (`K`), identifies the KNI protocol and version |
+| `1` | 1B | Frame type | — | see table below |
+| `2-3` | 2B | Src ID | **big-endian** | sender address |
+| `4-5` | 2B | Dst ID | **big-endian** | recipient address, `0xFFFF` = broadcast |
+| `6` | 1B | Seq | — | sequence number — dedupe + ACK correlation |
+| `7` | 1B | Flags | — | bitmask: `ACK_REQ`, `FRAG`, `LAST`, `ENCR` |
+
+**Multi-byte fields are big-endian on the wire, and every device we ship on is
+little-endian.** Reading `hdr->src_id` directly returns a byte-swapped value that
+still looks like a plausible node ID — `0x0102` reads as `0x0201` — so the
+generated header provides `lh_hdr_get_src_id()` / `lh_hdr_set_src_id()` and
+direct field access is forbidden.
+
+Sizes, all derived from the layout and asserted at compile time on every target:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `LH_HEADER_SIZE` | 8 B | this table |
+| `LH_CRC_SIZE` | 2 B | trailing CRC |
+| `LH_LORA_MTU` | 230 B | largest frame we put on air at SF9 |
+| `LH_MAX_PAYLOAD` | 220 B | `MTU - header - CRC` |
+| `LH_MIN_FRAME_SIZE` | 10 B | `header + CRC`; anything shorter is junk |
 
 After the header: a **CBOR payload** (variable length, depending on frame type), and at the very end of the frame a **CRC16** (2B, computed over the header + payload).
+
+The CRC is **CRC-16/CCITT-FALSE**: poly `0x1021`, init `0xFFFF`, no input or
+output reflection, no final XOR. Its catalogue check value is
+`CRC("123456789") == 0x29B1`. (Do not confuse this with CRC-16/AUG-CCITT, whose
+check value is `0xE5CC` — same polynomial, but init `0x1D0F`.) The C and
+TypeScript implementations are pinned to each other by the 500 shared vectors in
+`packages/protocol/test/fixtures/crc16-vectors.json`.
 
 ```
 ┌────────┬────────┬─────────┬─────────┬────────┬─────────┬──────────────┬────────┐

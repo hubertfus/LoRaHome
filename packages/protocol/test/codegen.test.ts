@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -138,6 +139,31 @@ test('the checked-in generated header is not stale (equivalent of gen:c --check)
     emitCHeader(),
     `${OUTPUT_RELATIVE} does not match the schema — run \`pnpm gen:c\``,
   );
+});
+
+test('the gen-c CLI exits 0 in --check mode when the header is current', () => {
+  const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'codegen', 'gen-c.js');
+  const output = execFileSync(process.execPath, [cli, '--check'], { encoding: 'utf8' });
+  assert.match(output, /gen:c --check OK/);
+});
+
+test('the gen-c CLI exits non-zero when the header has been tampered with', () => {
+  // Exercises the real gate the way CI invokes it, not just the comparison
+  // function underneath. A gate is only proven by watching it reject something.
+  const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'codegen', 'gen-c.js');
+  const pristine = readFileSync(GENERATED_PATH, 'utf8');
+  try {
+    writeFileSync(GENERATED_PATH, pristine.replace('LH_HEADER_SIZE     8u', 'LH_HEADER_SIZE     9u'));
+    assert.throws(
+      () => execFileSync(process.execPath, [cli, '--check'], { stdio: 'pipe' }),
+      /Command failed/,
+    );
+  } finally {
+    writeFileSync(GENERATED_PATH, pristine);
+  }
+
+  // And leaves the tree exactly as it found it.
+  assert.equal(readFileSync(GENERATED_PATH, 'utf8'), pristine);
 });
 
 test('a hand edit to the generated file is detectable', () => {

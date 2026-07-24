@@ -27,7 +27,8 @@
     "bench:baseline": "node tools/collect-metrics.mjs --write-baseline",
     "test:all": "pnpm -r test",
     "gate": "pnpm --filter @lorahome/tools build && node tools/dist/src/metric-gate-cli.js",
-    "prepare": "husky"
+    "prepare": "husky",
+    "release:notes": "pnpm --filter @lorahome/tools build && node tools/dist/src/release-notes-cli.js"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",
