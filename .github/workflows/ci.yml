@@ -31,11 +31,21 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm -r typecheck
-
+      # Build first, and not as a style preference. `typecheck` is `tsc --noEmit`
+      # per package; host and web import @lorahome/protocol, whose .d.ts files
+      # only exist once protocol has been built. On a developer machine there is
+      # usually a stale dist/ lying around so typecheck-first appears to work —
+      # on a clean checkout it fails with "Cannot find module '@lorahome/protocol'".
       - name: Build
         run: pnpm -r build
+
+      # The generated header is intentionally untracked (R0.3), so a fresh clone
+      # does not have it and anything that reads it must run after this.
+      - name: Generate C header
+        run: pnpm gen:c
+
+      - name: Typecheck
+        run: pnpm -r typecheck
 
       # A cycle between protocol/host/components is the failure mode that turns
       # the "single source of truth" into a knot nobody can refactor. Cheap to
@@ -106,6 +116,11 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # Same clean-checkout ordering as the workspace job: the protocol tests
+      # read the generated header, which no fresh clone has until gen:c runs.
+      - name: Build and generate C header
+        run: pnpm -r build && pnpm gen:c
 
       # ubuntu-latest ships gcc, so the host x86-64 ABI and the native
       # cross-language CRC comparison both run here — neither can run on a

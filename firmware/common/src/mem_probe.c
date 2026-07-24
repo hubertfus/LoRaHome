@@ -12,6 +12,23 @@
  * ever reported as an on-target number. Everything CI parses comes from the
  * line rendered by lh_mem_format_report, which is identical in both builds.
  */
+
+/*
+ * Must precede every other include, and cannot be dropped.
+ *
+ * clock_gettime and CLOCK_MONOTONIC are POSIX, not ISO C. Under -std=c11 glibc
+ * exposes only the ISO surface, so on a Linux host both vanish and the build
+ * fails with "implicit declaration of function 'clock_gettime'". The ESP
+ * toolchains use newlib, which exposes them regardless — which is exactly why
+ * this compiled on xtensa and riscv32 and broke only on x86-64.
+ *
+ * The feature-test macro has to come before the first libc header, because the
+ * first one pulled in decides what the rest of them reveal.
+ */
+#if !defined(ESP_PLATFORM) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "lorahome/mem_probe.h"
 
 #include <stdio.h>
