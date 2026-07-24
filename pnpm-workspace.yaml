@@ -1,4 +1,5 @@
 packages:
+  - "tools"
   - "packages/protocol"
   - "packages/components"
   - "packages/host"

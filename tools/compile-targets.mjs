@@ -20,7 +20,31 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const INCLUDE_DIR = join(REPO_ROOT, 'firmware', 'common', 'include');
-const SOURCE = join(REPO_ROOT, 'firmware', 'common', 'test', 'test_generated_header.c');
+
+/**
+ * Translation units compiled on every available target.
+ *
+ * `measureText` marks the ones whose .text size is a tracked budget. The
+ * generated-header test unit is compile-only — it exists to run assertions, and
+ * its size means nothing.
+ */
+const UNITS = [
+  {
+    id: 'generated_header',
+    path: join(REPO_ROOT, 'firmware', 'common', 'test', 'test_generated_header.c'),
+    measureText: false,
+    extraFlags: [],
+  },
+  {
+    id: 'mem_probe',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'mem_probe.c'),
+    measureText: true,
+    textBudget: 512,
+    // -Os because that is how the firmware ships; measuring .text at -O0 would
+    // report a number no released build ever has.
+    extraFlags: ['-Os'],
+  },
+];
 const HOME_DIR = process.env.USERPROFILE ?? process.env.HOME ?? '';
 const PIO_PACKAGES = join(HOME_DIR, '.platformio', 'packages');
 
@@ -77,10 +101,35 @@ function resolveCompiler(candidates) {
   return null;
 }
 
+/** Locates the matching `size` binary alongside a given compiler. */
+function sizeToolFor(compiler) {
+  const candidate = compiler.replace(/gcc(\.exe)?$/, (match) => match.replace('gcc', 'size'));
+  if (candidate === compiler) return null;
+  if (candidate.includes('/') || candidate.includes('\\')) {
+    return existsSync(candidate) ? candidate : null;
+  }
+  try {
+    execFileSync(candidate, ['--version'], { stdio: 'ignore' });
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
+/** Parses the `text` column out of `size`'s Berkeley-format output. */
+function textSize(sizeTool, objectFile) {
+  const output = execFileSync(sizeTool, [objectFile], { encoding: 'utf8' });
+  const dataLine = output.trim().split('\n')[1];
+  if (!dataLine) return null;
+  const value = Number(dataLine.trim().split(/\s+/)[0]);
+  return Number.isFinite(value) ? value : null;
+}
+
 const workDir = mkdtempSync(join(tmpdir(), 'lh-compile-'));
 let compiled = 0;
 let skipped = 0;
 let failed = 0;
+const textSizes = [];
 
 try {
   for (const target of TARGETS) {
@@ -91,18 +140,44 @@ try {
       continue;
     }
 
-    const objectFile = join(workDir, `${target.id}.o`);
-    try {
-      execFileSync(
-        compiler,
-        [...COMMON_FLAGS, ...target.extraFlags, '-I', INCLUDE_DIR, SOURCE, '-o', objectFile],
-        { stdio: 'pipe' },
-      );
-      console.log(`OK       ${target.id.padEnd(8)} — ${target.description}`);
+    let targetOk = true;
+    for (const unit of UNITS) {
+      const objectFile = join(workDir, `${target.id}-${unit.id}.o`);
+      try {
+        execFileSync(
+          compiler,
+          [
+            ...COMMON_FLAGS,
+            ...target.extraFlags,
+            ...unit.extraFlags,
+            '-I',
+            INCLUDE_DIR,
+            unit.path,
+            '-o',
+            objectFile,
+          ],
+          { stdio: 'pipe' },
+        );
+
+        if (unit.measureText) {
+          const sizeTool = sizeToolFor(compiler);
+          const bytes = sizeTool === null ? null : textSize(sizeTool, objectFile);
+          if (bytes !== null) {
+            textSizes.push({ target: target.id, unit: unit.id, bytes, budget: unit.textBudget });
+          }
+        }
+      } catch (error) {
+        const detail =
+          error instanceof Error && 'stderr' in error ? String(error.stderr) : String(error);
+        console.error(`FAIL     ${target.id.padEnd(8)} ${unit.id} — ${target.description}\n${detail}`);
+        targetOk = false;
+      }
+    }
+
+    if (targetOk) {
+      console.log(`OK       ${target.id.padEnd(8)} — ${target.description} (${UNITS.length} units)`);
       compiled++;
-    } catch (error) {
-      const detail = error instanceof Error && 'stderr' in error ? String(error.stderr) : String(error);
-      console.error(`FAIL     ${target.id.padEnd(8)} — ${target.description}\n${detail}`);
+    } else {
       failed++;
     }
   }
@@ -110,11 +185,25 @@ try {
   rmSync(workDir, { recursive: true, force: true });
 }
 
+for (const entry of textSizes) {
+  const budget = entry.budget === undefined ? '' : ` budget=${entry.budget}`;
+  console.log(
+    `LH_METRIC size.${entry.unit}.text.${entry.target} value=${entry.bytes} unit=B${budget}`,
+  );
+}
+
+const oversized = textSizes.filter((e) => e.budget !== undefined && e.bytes > e.budget);
+for (const entry of oversized) {
+  console.error(
+    `BUDGET BREACH: size.${entry.unit}.text.${entry.target} = ${entry.bytes} B (budget: ${entry.budget} B)`,
+  );
+}
+
 console.log(`LH_METRIC targets.compiled_clean value=${compiled}/${TARGETS.length} unit=targets`);
 console.log(`LH_METRIC targets.skipped value=${skipped} unit=targets`);
 
-if (failed > 0) {
-  console.error(`\n${failed} target(s) failed to compile the generated header.`);
+if (failed > 0 || oversized.length > 0) {
+  if (failed > 0) console.error(`\n${failed} target(s) failed to compile.`);
   process.exit(1);
 }
 if (compiled === 0) {
