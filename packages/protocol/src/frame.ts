@@ -11,6 +11,8 @@
  * radio. Change the layout here and both sides move together, or neither does.
  */
 
+import { crc16 } from './crc16.js';
+
 export const FRAME_MAGIC = 0x4b; // 'K' — magic + version nibble
 export const HEADER_SIZE = 8;
 export const CRC_SIZE = 2;
@@ -220,17 +222,9 @@ export function decodeHeader(buf: Uint8Array): FrameHeader {
   return out;
 }
 
-/** CRC16/CCITT-FALSE — must match the implementation in firmware/common/src/crc16.c. */
-export function crc16(data: Uint8Array): number {
-  let crc = 0xffff;
-  for (const byte of data) {
-    crc ^= byte << 8;
-    for (let i = 0; i < 8; i++) {
-      crc = (crc & 0x8000) !== 0 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
-    }
-  }
-  return crc;
-}
+// crc16 lives in ./crc16.ts, paired with firmware/common/src/crc16.c. It is not
+// re-exported here: `index.ts` exports both modules, and a name exported twice
+// is ambiguous under `export *`.
 
 /**
  * Builds header + payload + CRC into a single freshly allocated buffer.

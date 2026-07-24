@@ -44,6 +44,15 @@ const UNITS = [
     // report a number no released build ever has.
     extraFlags: ['-Os'],
   },
+  {
+    id: 'crc16',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'crc16.c'),
+    measureText: true,
+    // -ffunction-sections/-fdata-sections so .text and .rodata are attributed
+    // per symbol; without them the nibble table's 32 B is invisible in the
+    // section totals, and that 32 B is the whole point of the design choice.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
 ];
 const HOME_DIR = process.env.USERPROFILE ?? process.env.HOME ?? '';
 const PIO_PACKAGES = join(HOME_DIR, '.platformio', 'packages');
@@ -116,13 +125,30 @@ function sizeToolFor(compiler) {
   }
 }
 
-/** Parses the `text` column out of `size`'s Berkeley-format output. */
-function textSize(sizeTool, objectFile) {
-  const output = execFileSync(sizeTool, [objectFile], { encoding: 'utf8' });
-  const dataLine = output.trim().split('\n')[1];
-  if (!dataLine) return null;
-  const value = Number(dataLine.trim().split(/\s+/)[0]);
-  return Number.isFinite(value) ? value : null;
+/**
+ * Per-section sizes via `size -A` (SysV format).
+ *
+ * Berkeley format folds .rodata into the `text` column, and the roadmap budgets
+ * .text and .rodata separately — the nibble-table decision in T0.5 is precisely
+ * a trade of one against the other, so they have to be visible apart.
+ */
+function sectionSizes(sizeTool, objectFile) {
+  const output = execFileSync(sizeTool, ['-A', objectFile], { encoding: 'utf8' });
+  const sections = new Map();
+  for (const line of output.split('\n')) {
+    const match = line.trim().match(/^(\.[\w.]+)\s+(\d+)/);
+    if (match) sections.set(match[1], Number(match[2]));
+  }
+  return sections;
+}
+
+/** Sums a section and its per-function/per-object split (.text.foo, .rodata.bar). */
+function sectionTotal(sections, prefix) {
+  let total = 0;
+  for (const [name, size] of sections) {
+    if (name === prefix || name.startsWith(`${prefix}.`)) total += size;
+  }
+  return total;
 }
 
 const workDir = mkdtempSync(join(tmpdir(), 'lh-compile-'));
@@ -161,9 +187,15 @@ try {
 
         if (unit.measureText) {
           const sizeTool = sizeToolFor(compiler);
-          const bytes = sizeTool === null ? null : textSize(sizeTool, objectFile);
-          if (bytes !== null) {
-            textSizes.push({ target: target.id, unit: unit.id, bytes, budget: unit.textBudget });
+          if (sizeTool !== null) {
+            const sections = sectionSizes(sizeTool, objectFile);
+            textSizes.push({
+              target: target.id,
+              unit: unit.id,
+              bytes: sectionTotal(sections, '.text'),
+              rodata: sectionTotal(sections, '.rodata'),
+              budget: unit.textBudget,
+            });
           }
         }
       } catch (error) {
@@ -190,6 +222,7 @@ for (const entry of textSizes) {
   console.log(
     `LH_METRIC size.${entry.unit}.text.${entry.target} value=${entry.bytes} unit=B${budget}`,
   );
+  console.log(`LH_METRIC size.${entry.unit}.rodata.${entry.target} value=${entry.rodata} unit=B`);
 }
 
 const oversized = textSizes.filter((e) => e.budget !== undefined && e.bytes > e.budget);

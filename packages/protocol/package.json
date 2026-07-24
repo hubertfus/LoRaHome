@@ -15,7 +15,8 @@
     "clean": "rimraf dist",
     "bench": "pnpm run build && node --expose-gc dist/bench/frame.bench.js",
     "test:cov": "pnpm run build && node --test --experimental-test-coverage dist/test/*.test.js",
-    "gen:c": "pnpm run build && node dist/src/codegen/gen-c.js"
+    "gen:c": "pnpm run build && node dist/src/codegen/gen-c.js",
+    "gen:vectors": "pnpm run build && node dist/src/codegen/gen-vectors.js"
   },
   "dependencies": {
     "cbor-x": "^1.6.0"

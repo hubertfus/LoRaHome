@@ -13,7 +13,9 @@
  * an independent cross-check on throughput.
  */
 import { Bench } from 'tinybench';
+import { crc16, crc16Reference } from '../src/crc16.js';
 import {
+  LORA_MTU,
   decodeHeader,
   encodeFrame,
   encodeHeader,
@@ -127,6 +129,27 @@ const decode = measure(() => {
 });
 report('bench.header.decode.p50', decode.p50, 'ns/op', 200);
 report('bench.header.decode.p99', decode.p99, 'ns/op', 200);
+
+// --- CRC16 (T0.5) ----------------------------------------------------------
+
+const crcBuffer = new Uint8Array(LORA_MTU);
+for (let i = 0; i < crcBuffer.length; i++) crcBuffer[i] = (i * 37 + 11) & 0xff;
+
+const crcTable = measure(() => {
+  sink += crc16(crcBuffer);
+});
+// Budget is 3 us for a 230 B buffer; reported in ns/op, so 3000 ns.
+report('bench.crc16.ts.230B.p50', crcTable.p50, 'ns/op', 3000);
+report('bench.crc16.ts.230B.p99', crcTable.p99, 'ns/op', 3000);
+
+const crcBitwise = measure(() => {
+  sink += crc16Reference(crcBuffer);
+});
+report('bench.crc16.ts.230B.bitwise_p50', crcBitwise.p50, 'ns/op');
+console.log(
+  `LH_METRIC bench.crc16.ts.speedup value=${(crcBitwise.p50 / crcTable.p50).toFixed(2)} unit=x` +
+    ' (nibble table vs bit-by-bit)',
+);
 
 const fullPayload = new Uint8Array(MAX_PAYLOAD);
 const fullFrame = measure(() => {

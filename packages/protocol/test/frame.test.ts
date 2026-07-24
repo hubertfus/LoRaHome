@@ -4,10 +4,10 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import fc from 'fast-check';
+import { crc16 } from '../src/crc16.js';
 import {
   BROADCAST_ID,
   CRC_SIZE,
-  crc16,
   decodeFrame,
   decodeHeader,
   encodeFrame,
