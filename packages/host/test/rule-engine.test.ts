@@ -31,7 +31,7 @@ test('fires once debounce holds continuously above threshold', () => {
   engine.ingest(1, 10, 30, 0);
   const fired = engine.ingest(1, 10, 30, 1000);
   assert.equal(fired.length, 1);
-  assert.equal(fired[0].value, 30);
+  assert.equal(fired[0]!.value, 30);
 });
 
 test('does not re-fire until value drops past the hysteresis band and re-crosses', () => {

@@ -23,6 +23,7 @@ test('decodeFrame rejects a corrupted CRC', () => {
     { type: FrameType.BEACON, srcId: 1, dstId: 0xffff, seq: 0, flags: FrameFlags.NONE },
     new Uint8Array(),
   );
-  wire[wire.length - 1] ^= 0xff; // flip a CRC byte
+  const last = wire.length - 1;
+  wire[last] = wire[last]! ^ 0xff; // flip a CRC byte
   assert.throws(() => decodeFrame(wire), /CRC mismatch/);
 });

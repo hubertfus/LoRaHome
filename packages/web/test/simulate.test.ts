@@ -23,7 +23,7 @@ test('simulateRule replays a recorded time series and reports the same fire poin
   ]);
 
   assert.equal(fired.length, 1);
-  assert.equal(fired[0].atMs, 1500);
+  assert.equal(fired[0]!.atMs, 1500);
 });
 
 test('simulateRule reports nothing when the condition never holds long enough', () => {

@@ -21,14 +21,15 @@ test('compileRulesToCbor round-trips through CBOR with integer keys', () => {
   const decoded = decode(wire) as Map<number, number>[];
 
   assert.equal(decoded.length, 1);
-  const keys = [...decoded[0].keys()].sort((a, b) => a - b);
+  const first = decoded[0]!;
+  const keys = [...first.keys()].sort((a, b) => a - b);
   assert.deepEqual(keys, [1, 2, 3, 4, 5, 6, 7]);
-  assert.equal(decoded[0].get(1), 10); // src_sensor_id
-  assert.equal(decoded[0].get(3), 25.5); // threshold
+  assert.equal(first.get(1), 10); // src_sensor_id
+  assert.equal(first.get(3), 25.5); // threshold
 
   // Every key must be a number — a string key here would mean the payload
   // silently blew the CBOR-integer-key contract (ARCHITECTURE.md §5).
-  for (const key of decoded[0].keys()) {
+  for (const key of first.keys()) {
     assert.equal(typeof key, 'number');
   }
 });

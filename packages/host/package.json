@@ -6,7 +6,7 @@
   "type": "module",
   "main": "./dist/src/index.js",
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=20.11.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
