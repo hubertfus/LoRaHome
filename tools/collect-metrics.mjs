@@ -75,6 +75,20 @@ const sources = [];
  */
 const rawLines = [];
 
+/**
+ * Which machine produced these numbers.
+ *
+ * Stored alongside the metrics because byte sizes and timings are properties of
+ * the environment as much as of the code: the same crc16.c measured 80 B on a
+ * developer laptop and 76 B on CI, from nothing but a different GCC build. A
+ * gate that cannot tell a toolchain upgrade from a code regression will report
+ * the upgrade as a regression, and get switched off.
+ */
+const env = {
+  platform: `${process.platform}-${process.arch}`,
+  node: process.versions.node,
+};
+
 for (const step of STEPS) {
   let output = '';
   let ok = true;
@@ -89,6 +103,14 @@ for (const step of STEPS) {
 
   let count = 0;
   for (const line of output.split('\n')) {
+    const envMarker = line.indexOf('LH_ENV ');
+    if (envMarker !== -1) {
+      const payload = line.slice(envMarker + 'LH_ENV '.length).trim();
+      const eq = payload.indexOf('=');
+      if (eq > 0) env[payload.slice(0, eq)] = payload.slice(eq + 1);
+      continue;
+    }
+
     const parsed = parseLine(line);
     if (parsed.length > 0) rawLines.push(line.slice(line.indexOf('LH_METRIC ')).trimEnd());
     for (const [name, value] of parsed) {
@@ -104,7 +126,7 @@ mkdirSync(RESULTS_DIR, { recursive: true });
 
 writeFileSync(
   join(RESULTS_DIR, 'latest.json'),
-  JSON.stringify({ sources, metrics }, null, 2) + '\n',
+  JSON.stringify({ __env: env, sources, metrics }, null, 2) + '\n',
   'utf8',
 );
 writeFileSync(join(RESULTS_DIR, 'latest.log'), rawLines.join('\n') + '\n', 'utf8');
@@ -118,9 +140,17 @@ if (process.argv.includes('--write-baseline')) {
     ? JSON.parse(readFileSync(baselinePath, 'utf8'))
     : {};
 
-  writeFileSync(baselinePath, JSON.stringify(metrics, null, 2) + '\n', 'utf8');
+  // __env first so a reader sees the provenance before the numbers. The gate
+  // ignores non-numeric baseline entries, so this key needs no special casing
+  // there beyond the comparison it enables.
+  writeFileSync(
+    baselinePath,
+    JSON.stringify({ __env: env, ...metrics }, null, 2) + '\n',
+    'utf8',
+  );
 
-  const before = Object.keys(previous).length;
+  const before = Object.keys(previous).filter((k) => k !== '__env').length;
   const after = Object.keys(metrics).length;
   console.log(`wrote bench/results/baseline.json (${before} -> ${after} metrics)`);
+  console.log(`  env: ${Object.entries(env).map(([k, v]) => `${k}=${v}`).join('  ')}`);
 }

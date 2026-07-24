@@ -110,6 +110,24 @@ function resolveCompiler(candidates) {
   return null;
 }
 
+/**
+ * First line of `<compiler> --version`.
+ *
+ * Emitted as LH_ENV so the collector can record which toolchain produced a size
+ * metric. Byte sizes are a property of the compiler as much as of the code —
+ * the same crc16.c measured 80 B locally and 76 B on CI purely because the two
+ * machines had different GCC builds. Without this, the gate reads a toolchain
+ * upgrade as a code regression.
+ */
+function compilerVersion(compiler) {
+  try {
+    const output = execFileSync(compiler, ['--version'], { encoding: 'utf8', stdio: 'pipe' });
+    return output.split('\n')[0]?.trim() ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 /** Locates the matching `size` binary alongside a given compiler. */
 function sizeToolFor(compiler) {
   const candidate = compiler.replace(/gcc(\.exe)?$/, (match) => match.replace('gcc', 'size'));
@@ -165,6 +183,8 @@ try {
       skipped++;
       continue;
     }
+
+    console.log(`LH_ENV toolchain.${target.id}=${compilerVersion(compiler)}`);
 
     let targetOk = true;
     for (const unit of UNITS) {

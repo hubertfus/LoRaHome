@@ -221,6 +221,22 @@ export interface GateOptions {
   regressionJustified?: boolean;
   /** Fail when a metric present in the baseline is absent from this run. */
   requireAllBaselineMetrics?: boolean;
+  /**
+   * Set when the baseline was collected on a different platform or toolchain.
+   *
+   * Suppresses regression checks on environment-sensitive metrics (sizes and
+   * timings) while leaving budgets fully enforced. Comparing a byte count from
+   * GCC 8.4 against one from GCC 13 measures the compiler, not the change —
+   * observed as an unexplained 5% "regression" in size.crc16.text between a
+   * developer laptop and CI. Budgets still apply because they are absolute
+   * contracts: 80 B or 76 B, both must fit under the limit.
+   */
+  environmentChanged?: boolean;
+}
+
+/** Metrics whose value depends on the compiler or machine, not only the code. */
+export function isEnvironmentSensitive(name: string): boolean {
+  return /^(size|bench|mem)\./.test(name);
 }
 
 /**
@@ -259,6 +275,10 @@ export function evaluateGate(
 
     const previous = baseline[metric.name];
     if (previous === undefined) continue;
+
+    // Different compiler or machine: the budget above still bound, but a
+    // percentage change against an incomparable baseline says nothing.
+    if (options.environmentChanged === true && isEnvironmentSensitive(metric.name)) continue;
 
     // A zero baseline has no meaningful percentage change; any movement away
     // from zero is reported as a regression only if it is in the bad direction.

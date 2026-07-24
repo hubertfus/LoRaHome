@@ -56,7 +56,39 @@ const metricsOutput =
     ? readFileSync(resolve(metricsPath), 'utf8')
     : undefined;
 
-const verdict = runGate({ commitMessage, baseline, metricsOutput });
+/**
+ * Compares the environment the baseline was recorded in against this run's.
+ *
+ * Both files carry a `__env` block written by collect-metrics. If they disagree
+ * — different platform, different compiler build — size and timing comparisons
+ * are between incomparable numbers and the regression check on them is dropped.
+ * Absent metadata means "cannot tell", which is treated as unchanged rather
+ * than silently disabling half the gate.
+ */
+function readEnv(path: string | undefined): Record<string, string> | null {
+  if (path === undefined || !existsSync(resolve(path))) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(resolve(path), 'utf8')) as { __env?: unknown };
+    const env = parsed.__env;
+    return env !== null && typeof env === 'object' ? (env as Record<string, string>) : null;
+  } catch {
+    return null;
+  }
+}
+
+const baselineEnv = readEnv(baselinePath);
+const latestEnv = readEnv(argValue('--latest'));
+const environmentChanged =
+  baselineEnv !== null && latestEnv !== null && JSON.stringify(baselineEnv) !== JSON.stringify(latestEnv);
+
+if (environmentChanged) {
+  console.log('NOTE: baseline was recorded in a different environment —');
+  console.log(`  baseline: ${JSON.stringify(baselineEnv)}`);
+  console.log(`  this run: ${JSON.stringify(latestEnv)}`);
+  console.log('  budgets still enforced; regression checks on size.*/bench.*/mem.* skipped.');
+}
+
+const verdict = runGate({ commitMessage, baseline, metricsOutput, environmentChanged });
 const elapsedS = Number(process.hrtime.bigint() - started) / 1e9;
 
 console.log(formatVerdict(verdict));

@@ -108,6 +108,35 @@ test('the noise floor never softens a budget', () => {
   assert.equal(result.passed, false);
 });
 
+test('a changed environment suppresses size/timing regressions but not budgets', () => {
+  // Real case: crc16.c compiled to 80 B on a dev laptop and 76 B on CI, purely
+  // from a different GCC build. Comparing those measures the compiler.
+  const metrics = parseMetrics('LH_METRIC size.crc16.text value=200 unit=B');
+  const baseline = { 'size.crc16.text': 80 };
+
+  assert.equal(evaluateGate(metrics, baseline).passed, false, 'same env: a real regression');
+  assert.equal(
+    evaluateGate(metrics, baseline, { environmentChanged: true }).passed,
+    true,
+    'different toolchain: not comparable, so not reported',
+  );
+
+  // A budget is absolute and survives an environment change.
+  const overBudget = parseMetrics('LH_METRIC size.crc16.text value=900 unit=B budget=512');
+  assert.equal(evaluateGate(overBudget, baseline, { environmentChanged: true }).passed, false);
+});
+
+test('a changed environment still gates non-environmental metrics', () => {
+  // Test counts and assertion counts do not depend on the compiler, so a
+  // toolchain change is no excuse for them moving.
+  const result = evaluateGate(
+    parseMetrics('LH_METRIC count.static_asserts value=3 budget=1'),
+    { 'count.static_asserts': 15 },
+    { environmentChanged: true },
+  );
+  assert.equal(result.regressions.length, 1, 'assertion count dropping is still a regression');
+});
+
 test('high-variance metrics are trended but never fatal', () => {
   // p99 and tinybench throughput move 12-29% between runs on an idle machine.
   // Gating on them at 5% would fail builds for scheduler noise.

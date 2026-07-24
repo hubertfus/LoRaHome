@@ -32,6 +32,8 @@ export interface GateInput {
   metricsOutput?: string | undefined;
   /** Exempt merge/revert/fixup commits, which carry no work of their own. */
   allowMissingMetrics?: boolean | undefined;
+  /** Baseline came from a different platform/toolchain — see GateOptions. */
+  environmentChanged?: boolean | undefined;
 }
 
 export interface GateVerdict {
@@ -78,6 +80,7 @@ export function runGate(input: GateInput): GateVerdict {
 
   const result = evaluateGate(metrics, baseline, {
     regressionJustified: hasRegressionJustification(commitMessage),
+    environmentChanged: input.environmentChanged === true,
   });
 
   if (result.breaches.length > 0) {

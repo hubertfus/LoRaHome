@@ -140,4 +140,5 @@ jobs:
           pnpm --filter @lorahome/tools build
           node tools/dist/src/metric-gate-cli.js \
             --commit-msg /tmp/commit-msg.txt \
-            --metrics bench/results/latest.log
+            --metrics bench/results/latest.log \
+            --latest bench/results/latest.json
