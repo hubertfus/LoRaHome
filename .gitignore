@@ -47,7 +47,11 @@ test-results/
 playwright-report/
 bench/results/*.json
 bench/results/*.log
-!bench/results/baseline.json          # baseline metryk trzymamy w repo
+# Baseline metryk trzymamy w repo — to punkt zero historii metryk.
+# UWAGA: .gitignore nie obsluguje komentarzy na koncu linii. Komentarz dopisany
+# po wzorcu staje sie czescia wzorca, przez co ponizsza regula przestaje dzialac
+# i baseline.json po cichu wypada z repo.
+!bench/results/baseline.json
 
 # ---------- Środowisko / sekrety ----------
 .env
