@@ -120,6 +120,80 @@ LoRaHome isn't trying to be ESPHome for LoRa. It's a different mental model: **f
 
 ---
 
+## 🗺️ Roadmap
+
+LoRaHome is built in phases, not on a calendar. Each phase closes with a tagged,
+stable release — we ship when the numbers say it's ready, not when a date says so.
+
+### Phase 1 — Rock-Solid Foundations
+
+The unglamorous work that everything else stands on: one shared definition of the
+wire format across every language in the project, a dependable link between the
+host and the radio, and delivery you can trust when packets are travelling
+kilometres through walls, rain and interference.
+
+- One source of truth for the on-air format, shared by host and firmware
+- A stable host ⇄ radio link that survives noisy cables and long uptimes
+- Reliable delivery: nothing silently lost, nothing silently duplicated
+- Continuous memory and timing budgets enforced in CI from day one
+
+**You'll be able to:** flash two boards, plug one into your laptop, and watch
+messages flow both ways — reliably, for days.
+
+### Phase 2 — Hardware That Introduces Itself
+
+Sensors should not require a datasheet, a config file and a recompile. In this
+phase nodes learn to look around, report what they found, and accept new
+behaviour delivered over the air — with a safety net if that behaviour turns out
+to be wrong.
+
+- Live hardware discovery: the node tells the host what's attached
+- New sensors added to the platform as data, never as UI code
+- Behaviour changes delivered over the air in seconds
+- Safe rollback: a bad update can never brick a node in the field
+
+**You'll be able to:** plug a sensor into a node in a barn, and have it appear in
+your browser without touching a keyboard on-site.
+
+### Phase 3 — The Visual Node Editor
+
+Where LoRaHome becomes a no-code platform. Drag, connect, publish. Logic lives
+in the picture on your screen — and in the network minutes later.
+
+- Visual rule graph editor: sensors, conditions, actions
+- Side panels generated automatically from component definitions
+- Local decisions on the node, coordinated decisions across the fleet
+- One click from "graph on screen" to "logic running in the field"
+
+**You'll be able to:** build a whole automation — "if soil moisture drops below
+X for Y minutes, open valve Z" — without writing a line of code.
+
+### Phase 4 — Superpowers
+
+The features that separate a hobby project from something you'd trust with a
+season's harvest: predicting behaviour before deployment, predicting battery life
+before you seal the enclosure, and staying inside radio regulations automatically.
+
+- In-browser simulator: dry-run your automations before they touch hardware
+- Energy budget calculator: battery life estimated from your actual setup
+- Automatic radio airtime compliance — the platform refuses to break the rules
+- Time-travel debugging: replay exactly why a relay flipped at 3:14 a.m.
+
+**You'll be able to:** answer "will this run all winter on two AA cells?" before
+you climb the ladder.
+
+### Beyond
+
+Ideas on the table, unscheduled and open for discussion: multi-hop coverage for
+awkward terrain, hardened long-term field deployments, richer visual logic
+primitives, and integrations with the wider home-automation world.
+
+> Roadmap items are direction, not promises. Priorities follow real deployments
+> and community feedback — [open an issue](../../issues) and tell us what you'd
+> build with it.
+
+---
+
 ## Project status
 
 🚧 Early stage (V1 in progress). The rule engine is deliberately **not** a virtual machine or bytecode — it's a flat table of records: `{src_sensor_id, op, threshold, hysteresis, debounce_ms, action_id, action_param}`. Simplicity beats flexibility until we prove simplicity isn't enough.

@@ -1,25 +1,119 @@
-# Node / pnpm
+# ============================================================
+#  LoRaHome — monorepo .gitignore
+#  (Node.js/pnpm + Vite + ESP-IDF/PlatformIO + SQLite)
+# ============================================================
+
+# ---------- CONFIDENTIAL / INTERNAL PLANNING ----------
+# Wewnętrzne dokumenty strategiczne — NIGDY nie commitować.
+# Reguły celowo umieszczone wysoko i bez wyjątków (brak "!" un-ignore).
+.internal_roadmap.md
+*.internal.md
+**/*.internal.md
+.internal/
+internal-notes/
+*.internal.json
+*.internal.yaml
+
+# ---------- Node.js / pnpm / workspace ----------
 node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.npm/
+.yarn/cache/
+.yarn/install-state.gz
+
+# ---------- Build output (TS / Vite / tsup) ----------
 dist/
 build/
-.pnpm-store/
+out/
+.output/
+.vite/
 *.tsbuildinfo
+packages/*/dist/
+packages/web/dist/
+# Wygenerowane nagłówki C z paczki `protocol` (źródłem prawdy jest TS)
+firmware/common/include/lorahome/protocol_generated.h
+firmware/common/include/lorahome/field_map_generated.h
+
+# ---------- Testy / coverage / benchmarki ----------
+coverage/
+.nyc_output/
+*.lcov
+test-results/
+playwright-report/
+bench/results/*.json
+!bench/results/baseline.json          # baseline metryk trzymamy w repo
+
+# ---------- Środowisko / sekrety ----------
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
 
-# SQLite
+# ---------- SQLite (stan hosta, telemetria, logi) ----------
 *.sqlite
+*.sqlite3
 *.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 *.db
+*.db-journal
+data/
+!data/.gitkeep
 
-# PlatformIO / ESP-IDF
+# ---------- PlatformIO ----------
 .pio/
-.vscode/
+.pioenvs/
+.piolibdeps/
+.clang_complete
+.gcc-flags.json
+lib/readme.txt
+
+# ---------- ESP-IDF ----------
+build/
+cmake-build-*/
 sdkconfig
 sdkconfig.old
+sdkconfig.defaults.esp32*
+!sdkconfig.defaults
 managed_components/
-build/
+dependencies.lock
+*.bin
+*.elf
+*.map
+*.hex
+size_report.txt
+partitions_*.csv.bak
 
-# OS
+# ---------- Logi z portu szeregowego / capture ramek ----------
+*.log
+logs/
+capture/*.slip
+capture/*.pcap
+
+# ---------- IDE / edytory ----------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json.example
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+.clangd/
+compile_commands.json
+
+# ---------- OS ----------
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
+desktop.ini
