@@ -66,7 +66,7 @@ int lorahome_encode_frame(
 
 /**
  * Decodes and CRC-validates a full frame. On success, *out_header is filled
- * in and *out_payload/*out_payload_len point into buf (no copy). Returns
+ * in and *out_payload / *out_payload_len point into buf (no copy). Returns
  * false on a too-short buffer, bad magic byte, or CRC mismatch.
  */
 bool lorahome_decode_frame(

@@ -19,7 +19,10 @@
     "typecheck": "pnpm -r --filter=./packages/* typecheck",
     "clean": "pnpm -r --filter=./packages/* clean",
     "check:circular": "madge --circular --extensions ts,tsx packages/protocol/src packages/host/src packages/components/src packages/web/src",
-    "measure:build": "node tools/measure-build.mjs"
+    "measure:build": "node tools/measure-build.mjs",
+    "gen:c": "pnpm --filter @lorahome/protocol gen:c",
+    "gen:c:check": "pnpm --filter @lorahome/protocol gen:c -- --check",
+    "check:targets": "node tools/compile-targets.mjs"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",

@@ -45,3 +45,44 @@ jobs:
 
       - name: Test
         run: pnpm -r test
+
+  generated-header:
+    name: generated C header (drift + multi-ABI compile)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Risk R0.3: a hand edit to the generated header silently desynchronises
+      # TS and C. Regenerate, then require the bytes to match.
+      - name: Generate
+        run: pnpm gen:c
+
+      - name: Drift check
+        run: pnpm gen:c:check
+
+      # Cache the ESP cross toolchains — they are ~200 MB and change rarely.
+      - name: Cache PlatformIO toolchains
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-toolchains-xtensa-s3-riscv32-v1
+
+      - name: Install ESP toolchains
+        run: |
+          pipx install platformio
+          pio pkg install -g -t toolchain-xtensa-esp32s3
+          pio pkg install -g -t toolchain-riscv32-esp
+
+      # Compiles the generated header on three ABIs. The _Static_asserts are
+      # inert text until a compiler reads them; this is what makes them a gate.
+      - name: Compile generated header on all targets
+        run: node tools/compile-targets.mjs
