@@ -1,0 +1,12 @@
+{
+  "description": "TELEMETRY frame with a CBOR payload and ACK_REQ set. Golden vector: byte-for-byte contract between TS and C. CRC16/CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflect, no xorout) over header+payload.",
+  "header": {
+    "type": "0x20",
+    "srcId": "0x0102",
+    "dstId": "0x0001",
+    "seq": "0x2A",
+    "flags": "0x01"
+  },
+  "payload_hex": "A1016344454144",
+  "wire_hex": "4B20010200012A01A1016344454144B553"
+}

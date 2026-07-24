@@ -9,17 +9,21 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "test": "node --test dist/test/*.test.js",
+    "test": "pnpm run build && node --test dist/test/*.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "bench": "pnpm run build && node --expose-gc dist/bench/frame.bench.js",
+    "test:cov": "pnpm run build && node --test --experimental-test-coverage dist/test/*.test.js"
   },
   "dependencies": {
     "cbor-x": "^1.6.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
+    "fast-check": "^4.9.0",
     "rimraf": "^6.0.0",
+    "tinybench": "^6.1.2",
     "typescript": "^5.5.0"
   }
 }

@@ -1,0 +1,12 @@
+{
+  "description": "Field-boundary frame: every header field at or near its maximum value. Catches width and endianness mistakes that a small-value fixture would sail straight past (e.g. a src_id truncated to 8 bits still looks right when src_id is 1).",
+  "header": {
+    "type": "0x41",
+    "srcId": "0xFFFE",
+    "dstId": "0xFFFF",
+    "seq": "0xFF",
+    "flags": "0x0F"
+  },
+  "payload_hex": "FF00FF",
+  "wire_hex": "4B41FFFEFFFFFF0FFF00FFA64C"
+}

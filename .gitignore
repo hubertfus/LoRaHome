@@ -34,6 +34,7 @@ out/
 *.tsbuildinfo
 packages/*/dist/
 packages/web/dist/
+packages/*/dist-test/
 # Wygenerowane nagłówki C z paczki `protocol` (źródłem prawdy jest TS)
 firmware/common/include/lorahome/protocol_generated.h
 firmware/common/include/lorahome/field_map_generated.h
