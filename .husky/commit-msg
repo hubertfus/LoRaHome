@@ -1,0 +1,21 @@
+#!/bin/sh
+# Metric gate, run locally so nobody discovers a rejected commit on CI twenty
+# minutes later. Roadmap T0.6.
+#
+# This checks the *shape* of the commit: that a METRICS: block exists, and that
+# the numbers in it do not regress the committed baseline by more than 5%
+# without a REGRESSION-JUSTIFIED: block. It does not re-run the benchmarks —
+# that would put minutes onto every commit, and a hook people disable protects
+# nothing. CI re-runs them for real.
+#
+# Escape hatch: `git commit --no-verify` when you genuinely need it. CI does not
+# have that option.
+
+if [ ! -f tools/dist/src/metric-gate-cli.js ]; then
+  pnpm --filter @lorahome/tools build >/dev/null 2>&1 || {
+    echo "commit-msg: could not build the metric gate; skipping local check."
+    exit 0
+  }
+fi
+
+node tools/dist/src/metric-gate-cli.js --commit-msg "$1"

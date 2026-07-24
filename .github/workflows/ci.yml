@@ -86,3 +86,43 @@ jobs:
       # inert text until a compiler reads them; this is what makes them a gate.
       - name: Compile generated header on all targets
         run: node tools/compile-targets.mjs
+
+  metrics-gate:
+    name: metrics gate (budgets + regression)
+    runs-on: ubuntu-latest
+
+    steps:
+      # Need the parent commit so the gate can diff against the baseline as it
+      # stood before this change.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # ubuntu-latest ships gcc, so the host x86-64 ABI and the native
+      # cross-language CRC comparison both run here — neither can run on a
+      # developer machine without a host toolchain.
+      - name: Cross-language CRC vectors (C vs TypeScript)
+        run: pnpm --filter @lorahome/protocol test
+
+      - name: Independent vector check (Python)
+        run: python3 tools/verify-crc-vectors.py
+
+      - name: Run all benchmarks
+        run: pnpm bench:all
+
+      - name: Gate the commit against the baseline
+        run: |
+          git log -1 --pretty=%B > /tmp/commit-msg.txt
+          pnpm --filter @lorahome/tools build
+          node tools/dist/src/metric-gate-cli.js \
+            --commit-msg /tmp/commit-msg.txt \
+            --metrics bench/results/latest.log

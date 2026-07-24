@@ -232,7 +232,14 @@ for (const entry of oversized) {
   );
 }
 
-console.log(`LH_METRIC targets.compiled_clean value=${compiled}/${TARGETS.length} unit=targets`);
+// Numeric, not "2/3": the metric parser rejects non-numeric values on purpose,
+// and a headline coverage number that silently never reaches the baseline is
+// exactly the kind of metric that quietly stops being tracked.
+console.log(
+  `LH_METRIC targets.compiled_clean value=${compiled} unit=targets budget=${TARGETS.length}` +
+    ` (of ${TARGETS.length})`,
+);
+console.log(`LH_METRIC targets.total value=${TARGETS.length} unit=targets`);
 console.log(`LH_METRIC targets.skipped value=${skipped} unit=targets`);
 
 if (failed > 0 || oversized.length > 0) {

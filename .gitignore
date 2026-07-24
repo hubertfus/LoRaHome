@@ -46,6 +46,7 @@ coverage/
 test-results/
 playwright-report/
 bench/results/*.json
+bench/results/*.log
 !bench/results/baseline.json          # baseline metryk trzymamy w repo
 
 # ---------- Środowisko / sekrety ----------

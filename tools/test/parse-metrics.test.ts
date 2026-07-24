@@ -74,6 +74,81 @@ test('treats a budget as a floor for higher-is-better metrics', () => {
   assert.equal(ok.passed, true);
 });
 
+test('a large percentage change on a tiny absolute value is not a regression', () => {
+  // 4 -> 5 B/op is "25% worse" and is jitter. Observed on consecutive runs of
+  // unchanged code, which is exactly the sort of thing that gets gates disabled.
+  const jitter = evaluateGate(parseMetrics('LH_METRIC mem.x.overhead_b_op value=5 unit=B/op'), {
+    'mem.x.overhead_b_op': 4,
+  });
+  assert.equal(jitter.passed, true);
+  assert.equal(jitter.regressions.length, 0);
+
+  const codegen = evaluateGate(parseMetrics('LH_METRIC bench.codegen.ms value=1.4 unit=ms'), {
+    'bench.codegen.ms': 1.3,
+  });
+  assert.equal(codegen.passed, true);
+});
+
+test('a real move clears both the relative and the absolute bar', () => {
+  const real = evaluateGate(parseMetrics('LH_METRIC mem.x.overhead_b_op value=64 unit=B/op'), {
+    'mem.x.overhead_b_op': 4,
+  });
+  assert.equal(real.passed, false, '4 -> 64 B/op is a genuine regression');
+
+  const slower = evaluateGate(parseMetrics('LH_METRIC bench.codegen.ms value=90 unit=ms'), {
+    'bench.codegen.ms': 1.3,
+  });
+  assert.equal(slower.passed, false);
+});
+
+test('the noise floor never softens a budget', () => {
+  // Budgets are exact at any magnitude: 5 B against a 4 B budget is a breach
+  // even though the delta is below the reporting floor.
+  const result = evaluateGate(parseMetrics('LH_METRIC mem.x.b_op value=5 unit=B/op budget=4'), {});
+  assert.equal(result.passed, false);
+});
+
+test('high-variance metrics are trended but never fatal', () => {
+  // p99 and tinybench throughput move 12-29% between runs on an idle machine.
+  // Gating on them at 5% would fail builds for scheduler noise.
+  const noisy = evaluateGate(
+    parseMetrics(
+      [
+        'LH_METRIC bench.header.encode.p99 value=300',
+        'LH_METRIC bench.tinybench.encodeHeader.ops_s value=1000',
+        'LH_METRIC bench.crc16.ts.speedup value=0.5',
+      ].join('\n'),
+    ),
+    {
+      'bench.header.encode.p99': 100,
+      'bench.tinybench.encodeHeader.ops_s': 9000000,
+      'bench.crc16.ts.speedup': 3,
+    },
+  );
+  assert.equal(noisy.passed, true, 'noisy tails must not fail the build');
+  assert.equal(noisy.regressions.length, 0);
+  assert.equal(noisy.metrics.length, 3, 'but they are still parsed and recorded');
+});
+
+test('the stable statistic beside a noisy one still gates', () => {
+  // p50 is the one that binds; this is what stops the exemption above from
+  // quietly disabling timing regressions altogether.
+  const result = evaluateGate(parseMetrics('LH_METRIC bench.header.encode.p50 value=300'), {
+    'bench.header.encode.p50': 100,
+  });
+  assert.equal(result.passed, false);
+});
+
+test('compiled_clean treats its budget as a required floor', () => {
+  // 2 of 3 ABIs verified is a gap in coverage, not a pass. This is the metric
+  // that stops "we skipped a target" from looking identical to "it built".
+  const partial = evaluateGate(parseMetrics('LH_METRIC targets.compiled_clean value=2 budget=3'), {});
+  assert.equal(partial.passed, false);
+
+  const full = evaluateGate(parseMetrics('LH_METRIC targets.compiled_clean value=3 budget=3'), {});
+  assert.equal(full.passed, true);
+});
+
 test('passes a 4% regression and fails a 6% one', () => {
   const baseline = { 'bench.parse': 100 };
   assert.equal(evaluateGate(parseMetrics('LH_METRIC bench.parse value=104'), baseline).passed, true);

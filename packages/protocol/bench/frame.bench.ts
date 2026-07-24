@@ -122,13 +122,13 @@ const encode = measure(() => {
   sink += encodeHeader(HEADER)[0]!;
 });
 report('bench.header.encode.p50', encode.p50, 'ns/op', 200);
-report('bench.header.encode.p99', encode.p99, 'ns/op', 200);
+report('bench.header.encode.p99', encode.p99, 'ns/op');
 
 const decode = measure(() => {
   sink += decodeHeader(ENCODED_HEADER).seq;
 });
 report('bench.header.decode.p50', decode.p50, 'ns/op', 200);
-report('bench.header.decode.p99', decode.p99, 'ns/op', 200);
+report('bench.header.decode.p99', decode.p99, 'ns/op');
 
 // --- CRC16 (T0.5) ----------------------------------------------------------
 
@@ -140,7 +140,7 @@ const crcTable = measure(() => {
 });
 // Budget is 3 us for a 230 B buffer; reported in ns/op, so 3000 ns.
 report('bench.crc16.ts.230B.p50', crcTable.p50, 'ns/op', 3000);
-report('bench.crc16.ts.230B.p99', crcTable.p99, 'ns/op', 3000);
+report('bench.crc16.ts.230B.p99', crcTable.p99, 'ns/op');
 
 const crcBitwise = measure(() => {
   sink += crc16Reference(crcBuffer);
@@ -166,7 +166,7 @@ const intoStats = measure(() => {
   sink += scratch[0]!;
 });
 report('bench.header.encode_into.p50', intoStats.p50, 'ns/op', 200);
-report('bench.header.encode_into.p99', intoStats.p99, 'ns/op', 200);
+report('bench.header.encode_into.p99', intoStats.p99, 'ns/op');
 
 const bytesPerOp = measureBytesPerOp(() => encodeHeader(HEADER));
 const floorPerOp = measureBytesPerOp(() => new Uint8Array(HEADER_SIZE));
