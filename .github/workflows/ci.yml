@@ -15,8 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # 22 is the floor and 24 is what developers run. Not 20: packages/host
+      # imports node:sqlite, which landed in Node 22.5.0, so a Node 20 leg
+      # cannot pass however green the rest of the workspace is. The roadmap's
+      # "Node 20/22" predates that dependency — see the commit message.
       matrix:
-        node: [20, 22]
+        node: [22, 24]
 
     steps:
       - uses: actions/checkout@v4
@@ -56,12 +60,22 @@ jobs:
       - name: Test
         run: pnpm -r test
 
-  generated-header:
-    name: generated C header (drift + multi-ABI compile)
+  # Firmware compilation and the metric gate live in one job on purpose: both
+  # need the ESP cross toolchains, and those are ~200 MB. Split across two jobs
+  # they get restored twice to do one job's worth of work. `pnpm bench:all`
+  # invokes compile-targets, so the gate's targets.compiled_clean only reads 3/3
+  # where the toolchains are actually present.
+  firmware-and-metrics:
+    name: firmware headers + metric gate
     runs-on: ubuntu-latest
 
     steps:
+      # Need the parent commit so the gate can diff against the baseline as it
+      # stood before this change.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -71,11 +85,13 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # Clean-checkout ordering: the protocol tests read the generated header,
+      # which no fresh clone has until gen:c runs.
+      - name: Build and generate C header
+        run: pnpm -r build && pnpm gen:c
+
       # Risk R0.3: a hand edit to the generated header silently desynchronises
       # TS and C. Regenerate, then require the bytes to match.
-      - name: Generate
-        run: pnpm gen:c
-
       - name: Drift check
         run: pnpm gen:c:check
 
@@ -96,31 +112,6 @@ jobs:
       # inert text until a compiler reads them; this is what makes them a gate.
       - name: Compile generated header on all targets
         run: node tools/compile-targets.mjs
-
-  metrics-gate:
-    name: metrics gate (budgets + regression)
-    runs-on: ubuntu-latest
-
-    steps:
-      # Need the parent commit so the gate can diff against the baseline as it
-      # stood before this change.
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      # Same clean-checkout ordering as the workspace job: the protocol tests
-      # read the generated header, which no fresh clone has until gen:c runs.
-      - name: Build and generate C header
-        run: pnpm -r build && pnpm gen:c
 
       # ubuntu-latest ships gcc, so the host x86-64 ABI and the native
       # cross-language CRC comparison both run here — neither can run on a
