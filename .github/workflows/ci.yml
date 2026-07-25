@@ -60,6 +60,13 @@ jobs:
       - name: Test
         run: pnpm -r test
 
+      # Drives the soak harness against its in-process loopback. The real run
+      # takes a day and two boards; this checks the arithmetic that has to be
+      # right unattended — loss accounting, late arrivals, heap drift, reboot
+      # detection — because a 24 h run is a bad place to find out it is wrong.
+      - name: Soak harness self-check (loopback)
+        run: pnpm soak:selfcheck
+
   # Firmware compilation and the metric gate live in one job on purpose: both
   # need the ESP cross toolchains, and those are ~200 MB. Split across two jobs
   # they get restored twice to do one job's worth of work. `pnpm bench:all`

@@ -136,6 +136,10 @@ importers:
         version: 5.4.21(@types/node@20.19.43)
 
   tools:
+    dependencies:
+      '@lorahome/host':
+        specifier: workspace:*
+        version: link:../packages/host
     devDependencies:
       '@types/node':
         specifier: ^22.5.0

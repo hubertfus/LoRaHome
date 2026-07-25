@@ -10,6 +10,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rimraf dist"
   },
+  "dependencies": {
+    "@lorahome/host": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^22.5.0",
     "rimraf": "^6.0.0",
