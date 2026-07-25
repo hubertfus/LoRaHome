@@ -25,6 +25,7 @@ const RESULTS_DIR = join(REPO_ROOT, 'bench', 'results');
 const STEPS = [
   { id: 'codegen', command: 'pnpm gen:c' },
   { id: 'targets', command: 'node tools/compile-targets.mjs' },
+  { id: 'native', command: 'node tools/run-native.mjs' },
   { id: 'protocol-bench', command: 'pnpm --filter @lorahome/protocol bench' },
 ];
 

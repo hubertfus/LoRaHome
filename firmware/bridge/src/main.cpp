@@ -15,13 +15,23 @@ static LoraTransport g_transport(&g_radio);
 static DutyCycleTracker g_dutyCycle(0.01f, 60UL * 60UL * 1000UL);
 
 static uint8_t g_serialRxBuf[512];
-static lorahome_slip_decoder_t g_serialDecoder;
+static lh_slip_decoder_t g_serialDecoder;
 
-static uint8_t g_slipEncodeBuf[2 * sizeof(g_serialRxBuf) + 2];
+// Risk R1.1: a TX buffer sized for the typical frame survives every test and
+// overruns the first time a payload happens to be all 0xC0. Derived from the
+// RX buffer rather than written as a literal, so the two cannot drift apart.
+static uint8_t g_slipEncodeBuf[LH_SLIP_ENCODED_MAX(sizeof(g_serialRxBuf))];
+
+// Encoded lengths are uint16_t all the way through the codec. At 512 B of RX
+// buffer that is nowhere near the limit — but the day somebody raises the RX
+// buffer to 40 kB, this fails the build instead of silently truncating.
+static_assert(LH_SLIP_ENCODED_MAX(sizeof(g_serialRxBuf)) <= UINT16_MAX,
+              "SLIP encoded frame no longer fits the uint16_t length type");
 
 static void sendToHost(const uint8_t* frame, size_t len) {
-  const int encodedLen = lorahome_slip_encode(frame, len, g_slipEncodeBuf, sizeof(g_slipEncodeBuf));
-  if (encodedLen < 0) return; // frame too large for the encode buffer — drop rather than corrupt
+  const uint16_t encodedLen = lh_slip_encode(frame, static_cast<uint16_t>(len), g_slipEncodeBuf,
+                                             static_cast<uint16_t>(sizeof(g_slipEncodeBuf)));
+  if (encodedLen == 0) return;  // no room for the worst case — drop rather than corrupt
   Serial.write(g_slipEncodeBuf, encodedLen);
 }
 
@@ -59,7 +69,7 @@ void setup() {
   Serial.begin(115200);
   g_transport.begin();
   g_transport.onReceive(onLoraFrameReceived);
-  lorahome_slip_decoder_init(&g_serialDecoder, g_serialRxBuf, sizeof(g_serialRxBuf));
+  lh_slip_init(&g_serialDecoder, g_serialRxBuf, sizeof(g_serialRxBuf));
 }
 
 void loop() {
@@ -67,9 +77,11 @@ void loop() {
 
   while (Serial.available() > 0) {
     const uint8_t byte = static_cast<uint8_t>(Serial.read());
-    if (lorahome_slip_decoder_feed(&g_serialDecoder, byte)) {
+    // The frame stays valid only until the next feed, so it is handled here and
+    // now. LH_SLIP_ERROR needs no branch: the decoder has already counted the
+    // damaged frame and resynchronised itself.
+    if (lh_slip_feed(&g_serialDecoder, byte) == LH_SLIP_FRAME_READY) {
       handleFrameFromHost(g_serialDecoder.buf, g_serialDecoder.len);
-      lorahome_slip_decoder_reset(&g_serialDecoder);
     }
   }
 }

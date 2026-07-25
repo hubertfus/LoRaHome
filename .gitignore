@@ -96,6 +96,15 @@ dependencies.lock
 size_report.txt
 partitions_*.csv.bak
 
+# ---------- Natywne buildy testowe (tools/run-native.mjs) ----------
+# Harness natywny buduje do katalogu tymczasowego, ale MSVC potrafi zostawic
+# artefakty w CWD (np. vc140.pdb przy /Zi bez /Fd). Lapiemy je tutaj, zeby
+# przypadkowy `git add -A` nie wciagnal ich do repo.
+*.pdb
+*.ilk
+*.obj
+*.exe
+
 # ---------- Logi z portu szeregowego / capture ramek ----------
 *.log
 logs/

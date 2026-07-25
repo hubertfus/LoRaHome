@@ -53,6 +53,17 @@ const UNITS = [
     // section totals, and that 32 B is the whole point of the design choice.
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
+  {
+    id: 'slip',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'slip.c'),
+    measureText: true,
+    textBudget: 1024, // T1.1
+    // Also where the decoder's 32 B struct budget is enforced: slip.c carries a
+    // _Static_assert on sizeof(lh_slip_decoder_t), so compiling it on both ESP
+    // ABIs is what proves the budget holds where it matters, not just on the
+    // host that happened to run the tests.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
 ];
 const HOME_DIR = process.env.USERPROFILE ?? process.env.HOME ?? '';
 const PIO_PACKAGES = join(HOME_DIR, '.platformio', 'packages');

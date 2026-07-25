@@ -226,7 +226,31 @@ The global rule engine (cross-device, on the Host) runs the same logic but opera
 
 The Bridge is the only component physically connected (USB/UART) to the Host. Its jobs:
 
-1. **Frame translation**: the Host sends raw protocol frames (§3.1) over Serial, wrapped in **SLIP** (Serial Line Internet Protocol, [RFC 1055](https://www.rfc-editor.org/rfc/rfc1055)) with the `0xC0` delimiter. The Bridge unwraps SLIP and sends the frame over LoRa. In the other direction: it receives from LoRa, wraps it in SLIP, and sends it over Serial to the Host.
+1. **Frame translation**: the Host sends raw protocol frames (§3.1) over Serial, wrapped in **SLIP** (Serial Line Internet Protocol, [RFC 1055](https://www.rfc-editor.org/rfc/rfc1055)). The Bridge unwraps SLIP and sends the frame over LoRa. In the other direction: it receives from LoRa, wraps it in SLIP, and sends it over Serial to the Host.
+
+### 7.1. SLIP on the wire
+
+The canonical implementation is `firmware/common/src/slip.c`; this section describes what it produces, and the two must not disagree.
+
+A frame is `END`, the escaped payload, `END`:
+
+| Byte | Value | Meaning |
+|---|---|---|
+| `END` | `0xC0` | Frame delimiter. Emitted both before and after every frame. |
+| `ESC` | `0xDB` | Escape prefix. |
+| `ESC_END` | `0xDC` | Second byte of an escaped `0xC0`. |
+| `ESC_ESC` | `0xDD` | Second byte of an escaped `0xDB`. |
+
+Inside a frame, a payload `0xC0` is sent as `ESC ESC_END` and a payload `0xDB` as `ESC ESC_ESC`. No other byte is altered, which is what makes the framing binary-transparent — unlike newline- or timeout-delimited framing, no payload value is forbidden.
+
+The **leading** `END` is not redundant. RFC 1055 recommends it so that noise accumulated on an idle line is terminated as an empty frame rather than being prepended to the next real one. An empty frame (`END END`) carries nothing and is therefore not delivered to the caller — it is a delimiter pair, not a zero-length message.
+
+Consequences the rest of the system has to respect:
+
+- **Worst-case expansion is exactly 2×.** A payload of nothing but `0xC0`/`0xDB` doubles, so an encoded frame is at most `2n + 2` bytes. Every serial TX buffer is sized from `LH_SLIP_ENCODED_MAX()` and the relation is held by `_Static_assert`, because a buffer sized for the average frame passes every test and overruns in the field (risk R1.1). `lh_slip_encode()` refuses a buffer that could not hold the worst case, so the failure is deterministic rather than payload-dependent.
+- **Decoding is streaming, one byte at a time.** A UART delivers whatever was in the FIFO, so frames routinely straddle reads.
+- **Structural errors cost one frame, not the session.** An illegal escape pair or a frame larger than the receive buffer is counted, discarded, and the decoder discards further bytes until the next `END`. Arbitrary garbage *within* a frame is not detectable at this layer — a random data byte is indistinguishable from payload — and is caught one layer up by the frame CRC (§3.1).
+- **No allocation.** The frame buffer belongs to the caller and is passed in at init; the decoder never resizes, copies or frees it.
 2. **Duty cycle tracker**: ETSI EN 300 220 mandates a hard 1% transmit-time limit on 868 MHz (per channel, within a 1-hour window). The Bridge tracks actual airtime (based on frame size and SF/BW) and **refuses to transmit** if it would exceed this limit — regardless of whether the Host (Duty Cycle Guard) already checked it earlier. Two independent layers of defense.
 3. **Retransmissions**: for frames with the `ACK_REQ` flag, the Bridge manages the timeout and resend (up to a configured retry limit) before reporting an error to the Host.
 4. **Time windows**: a simple TDMA-lite scheme — the Bridge assigns time slots to nodes to minimize collisions in denser P2P networks, without needing full mesh routing.

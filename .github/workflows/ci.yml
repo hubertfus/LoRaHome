@@ -113,6 +113,14 @@ jobs:
       - name: Compile generated header on all targets
         run: node tools/compile-targets.mjs
 
+      # Builds the firmware's C self-tests and actually runs them: 10k SLIP
+      # round trips and a million fuzz iterations, once at -O2 for the timings
+      # and once under ASAN+UBSAN for the memory-safety claim. Run as its own
+      # step rather than left to `bench:all`, because the collector deliberately
+      # keeps going when a step fails — it is gathering numbers, not gating.
+      - name: Native firmware self-tests (incl. sanitized fuzz run)
+        run: node tools/run-native.mjs
+
       # ubuntu-latest ships gcc, so the host x86-64 ABI and the native
       # cross-language CRC comparison both run here — neither can run on a
       # developer machine without a host toolchain.
