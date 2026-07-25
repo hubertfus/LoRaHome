@@ -15,6 +15,14 @@ extern "C" {
 #define LORAHOME_CRC_SIZE 2
 #define LORAHOME_BROADCAST_ID 0xFFFF
 
+/**
+ * Addresses the Bridge itself. A frame carrying this destination is answered
+ * locally and never transmitted. 0x0000 is reserved and is not a valid node id
+ * — a magic address inside the normal range would eventually collide with a
+ * real device and put diagnostics on the air.
+ */
+#define LORAHOME_BRIDGE_ID 0x0000
+
 typedef enum {
   LORAHOME_FRAME_BEACON = 0x01,
   LORAHOME_FRAME_JOIN_REQ = 0x02,
@@ -29,6 +37,9 @@ typedef enum {
   LORAHOME_FRAME_CMD_ACK = 0x31,
   LORAHOME_FRAME_CAPABILITY_REQ = 0x40,
   LORAHOME_FRAME_CAPABILITY_RSP = 0x41,
+  /* Bridge diagnostics — answered locally, never put on air. See bridge_stat.h. */
+  LORAHOME_FRAME_BRIDGE_STAT_REQ = 0x50,
+  LORAHOME_FRAME_BRIDGE_STAT_RSP = 0x51,
 } lorahome_frame_type_t;
 
 typedef enum {

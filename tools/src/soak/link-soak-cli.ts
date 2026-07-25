@@ -112,13 +112,16 @@ async function main(): Promise<void> {
       process.exit(2);
     }
     // Imported lazily so a loopback run needs no native serial bindings.
-    const { openSerialTransport } = await import('@lorahome/host');
-    transport = await openSerialTransport({ path: args.port, baudRate: args.baud });
+    const { openSerialTransport, BridgeHealthClient } = await import('@lorahome/host');
+    const serial = await openSerialTransport({ path: args.port, baudRate: args.baud });
+    transport = serial;
+    // BRIDGE_STAT_REQ/RSP over the same link. This is what makes heap drift —
+    // the number that decides whether a release ships — measurable on hardware
+    // at all; the Bridge has no other way to tell anyone how much memory it has
+    // left. A poll that times out yields null, and the harness records a gap
+    // rather than a zero.
+    readBridgeHealth = new BridgeHealthClient(serial).readForSoak;
     console.log(`soak: ${args.port} @ ${args.baud}, ${args.durationMs / 3_600_000}h`);
-    // The Bridge does not yet report its heap. Until it does, heap drift — the
-    // number that decides whether a release ships — is unavailable on hardware,
-    // and the report will say so rather than showing a zero.
-    readBridgeHealth = undefined;
   }
 
   const progress: SoakSample[] = [];

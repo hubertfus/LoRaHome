@@ -14,6 +14,7 @@
  */
 import { createHash } from 'node:crypto';
 import {
+  BRIDGE_ID,
   BROADCAST_ID,
   CRC_SIZE,
   FRAME_MAGIC,
@@ -57,6 +58,7 @@ function schemaFingerprint(): string {
     maxPayload: MAX_PAYLOAD,
     minFrameSize: MIN_FRAME_SIZE,
     broadcastId: BROADCAST_ID,
+    bridgeId: BRIDGE_ID,
     layout: HEADER_LAYOUT.map((f) => [f.name, f.offset, f.size, f.endian]),
     types: enumMembers(FrameType).map((m) => [m.name, m.value]),
     flags: enumMembers(FrameFlags).map((m) => [m.name, m.value]),
@@ -99,7 +101,13 @@ export function emitCHeader(): string {
   put(`#define LH_MAX_PAYLOAD     ${MAX_PAYLOAD}u`);
   put(`#define LH_MIN_FRAME_SIZE  ${MIN_FRAME_SIZE}u`);
   put(`#define LH_BROADCAST_ID    ${hex(BROADCAST_ID, 4)}u`);
+  put(`#define LH_BRIDGE_ID       ${hex(BRIDGE_ID, 4)}u  /* the Bridge itself; never on air */`);
   put();
+
+  staticAssert(
+    'LH_BRIDGE_ID != LH_BROADCAST_ID',
+    'the bridge-local address must not collide with broadcast',
+  );
 
   staticAssert(
     'LH_MAX_PAYLOAD == LH_LORA_MTU - LH_HEADER_SIZE - LH_CRC_SIZE',

@@ -135,8 +135,12 @@ Pass conditions:
 > The largest-block drift matters just as much: 180 kB free in fragments that
 > cannot hold a 4 kB buffer is a device that dies in week three.
 
-**Currently blocked.** The Bridge does not yet report its free heap over the
-link, so the soak has no health source on real hardware and the heap figures
-come back `SKIPPED` rather than zero. A diagnostic frame carrying
-`lh_mem_snapshot_t` (§0.4) closes this. Until then the 24-hour soak can measure
-loss, latency and reboots, but not the number that decides whether to tag.
+The heap figures come from the Bridge itself: the soak polls it with a
+`BRIDGE_STAT_REQ` every 20 frames and reads `heap_free_internal` and
+`heap_largest_block` out of the reply (ARCHITECTURE.md §7.5). Nothing extra
+needs wiring — it travels over the same serial link as the traffic.
+
+A poll that times out produces a gap in the series rather than a zero, so if the
+heap columns of the report are empty, the Bridge was not answering and the run
+tells you nothing about leaks. Check `pnpm check:bridge-stat` passes and that the
+firmware on the board is current before treating an empty column as a pass.

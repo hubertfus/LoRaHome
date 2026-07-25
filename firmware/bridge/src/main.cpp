@@ -13,6 +13,8 @@
  */
 #include <Arduino.h>
 #include <RadioLib.h>
+#include <esp_heap_caps.h>
+#include <esp_system.h>
 
 #include "duty_cycle_tracker.h"
 #include "lorahome/airtime.h"
@@ -65,6 +67,24 @@ static bool emitToHost(void* /*user*/, const uint8_t* bytes, uint16_t len) {
   return g_serial.write(bytes, len) == len;
 }
 
+/**
+ * The platform half of the diagnostic readout.
+ *
+ * `heap_largest_block` is here for the same reason §0.4 insists on it: 180 kB
+ * free in fragments too small to hold a 4 kB buffer is a device that dies in
+ * week three, and the free total on its own cannot show that. `min_free_ever`
+ * catches the transient low-water mark that a periodic sample would walk past.
+ */
+static void readHealth(void* /*user*/, lh_bridge_stat_t* out) {
+  out->uptime_ms = millis();
+  out->heap_free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+  out->heap_largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+  out->heap_min_free_ever = esp_get_minimum_free_heap_size();
+  out->ring_overrun = g_serial.overrunCount();
+  out->ring_hwm = g_serial.ring().stat_hwm;
+  out->ring_capacity = LH_UART_RING_SIZE;
+}
+
 static void onLoraFrameReceived(const uint8_t* data, size_t len, uint16_t /*srcId*/) {
   lh_bridge_on_radio_frame(&g_bridge, data, static_cast<uint16_t>(len));
 }
@@ -74,6 +94,7 @@ void setup() {
 
   lh_bridge_init(&g_bridge, emitToRadio, nullptr, emitToHost, nullptr);
   lh_bridge_set_duty_cycle_guard(&g_bridge, allowTransmit, nullptr);
+  lh_bridge_set_health_source(&g_bridge, readHealth, nullptr);
 
   g_transport.begin();
   g_transport.onReceive(onLoraFrameReceived);

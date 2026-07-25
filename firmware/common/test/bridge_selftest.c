@@ -314,6 +314,164 @@ static void test_worst_case_frame_survives_the_path(void) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* Bridge diagnostics (BRIDGE_STAT_REQ/RSP)                                   */
+/* ------------------------------------------------------------------------- */
+
+static void fake_health(void *user, lh_bridge_stat_t *out) {
+  (void)user;
+  out->uptime_ms = 123456u;
+  out->heap_free_internal = 196108u;
+  out->heap_largest_block = 172032u;
+  out->heap_min_free_ever = 190000u;
+  out->ring_overrun = 7u;
+  out->ring_hwm = 640u;
+  out->ring_capacity = 2048u;
+}
+
+/** Builds a BRIDGE_STAT_REQ addressed to the bridge itself. */
+static uint16_t make_stat_request(uint8_t *out, uint8_t seq) {
+  const lorahome_header_t header = {
+      (uint8_t)LORAHOME_FRAME_BRIDGE_STAT_REQ, 0x0001, LORAHOME_BRIDGE_ID, seq,
+      LORAHOME_FLAG_NONE,
+  };
+  const int len = lorahome_encode_frame(&header, NULL, 0, out, LH_BRIDGE_RADIO_BUF);
+  return len < 0 ? 0 : (uint16_t)len;
+}
+
+/**
+ * A request addressed to the Bridge is answered, not transmitted.
+ *
+ * This is what makes the 24-hour soak able to report heap drift at all: the
+ * Bridge has no display, no network stack and a serial port carrying frames
+ * rather than a console, so without this path its memory is unobservable and
+ * the release-blocking number can never be measured.
+ */
+static void test_stat_request_is_answered_locally(void) {
+  rig_init();
+  lh_bridge_set_health_source(&g_bridge_a, fake_health, NULL);
+
+  uint8_t frame[LH_BRIDGE_RADIO_BUF];
+  uint8_t wire[LH_BRIDGE_TX_SERIAL_BUF];
+  const uint16_t len = make_stat_request(frame, 0x2A);
+  const uint16_t wire_len = wrap(frame, len, wire, (uint16_t)sizeof wire);
+
+  /* Bridge A's to_host is the discard sink in this rig, so capture through the
+   * far-side decoder instead: point A's host output at the same SLIP decoder. */
+  lh_bridge_init(&g_bridge_a, radio_link, NULL, host_b_serial, NULL);
+  lh_bridge_set_health_source(&g_bridge_a, fake_health, NULL);
+  lh_bridge_feed_serial(&g_bridge_a, wire, wire_len);
+
+  CHECK(g_bridge_a.stats.local_requests == 1, "the request should have been answered locally");
+  CHECK(g_bridge_a.stats.radio_frames_out == 0, "A DIAGNOSTIC MUST NEVER GO ON AIR");
+  CHECK(g_delivered_count == 1, "no reply reached the host");
+  if (g_delivered_count != 1) return;
+
+  lorahome_header_t reply;
+  const uint8_t *payload = NULL;
+  size_t payload_len = 0;
+  CHECK(lorahome_decode_frame(g_delivered, g_delivered_len, &reply, &payload, &payload_len),
+        "the reply is not a valid frame");
+  CHECK(reply.type == (uint8_t)LORAHOME_FRAME_BRIDGE_STAT_RSP, "wrong reply type");
+  CHECK(reply.seq == 0x2A, "the reply must echo the request's seq");
+  CHECK(reply.dst_id == 0x0001, "the reply must go back to the requester");
+  CHECK(payload_len == LH_BRIDGE_STAT_SIZE, "payload is %u B, expected %u",
+        (unsigned)payload_len, (unsigned)LH_BRIDGE_STAT_SIZE);
+
+  lh_bridge_stat_t stat;
+  CHECK(lh_bridge_stat_decode(payload, (uint16_t)payload_len, &stat), "payload did not decode");
+  CHECK(stat.heap_free_internal == 196108u, "heap_free did not survive the round trip");
+  CHECK(stat.heap_largest_block == 172032u, "largest_block did not survive the round trip");
+  CHECK(stat.ring_hwm == 640u, "ring hwm did not survive the round trip");
+  CHECK(stat.serial_frames_in == 1u, "the core's own counters should be included");
+}
+
+/** Without a health source the counters still come back — zeroes, not silence. */
+static void test_stat_request_answered_without_health_source(void) {
+  rig_init();
+  lh_bridge_init(&g_bridge_a, radio_link, NULL, host_b_serial, NULL);
+
+  uint8_t frame[LH_BRIDGE_RADIO_BUF];
+  uint8_t wire[LH_BRIDGE_TX_SERIAL_BUF];
+  const uint16_t len = make_stat_request(frame, 1);
+  lh_bridge_feed_serial(&g_bridge_a, wire, wrap(frame, len, wire, (uint16_t)sizeof wire));
+
+  // A Host reading zero free heap will notice. A Host receiving nothing cannot
+  // tell a silent bridge from an unconfigured one.
+  CHECK(g_delivered_count == 1, "a bridge with no health source should still answer");
+}
+
+/** The same type addressed elsewhere is ordinary traffic and goes on air. */
+static void test_stat_type_addressed_to_a_node_is_forwarded(void) {
+  rig_init();
+
+  const lorahome_header_t header = {
+      (uint8_t)LORAHOME_FRAME_BRIDGE_STAT_REQ, 0x0001, 0x0042, 3, LORAHOME_FLAG_NONE,
+  };
+  uint8_t frame[LH_BRIDGE_RADIO_BUF];
+  const int len = lorahome_encode_frame(&header, NULL, 0, frame, sizeof frame);
+  CHECK(len > 0, "could not build the frame");
+  if (len <= 0) return;
+
+  uint8_t wire[LH_BRIDGE_TX_SERIAL_BUF];
+  lh_bridge_feed_serial(&g_bridge_a, wire,
+                        wrap(frame, (uint16_t)len, wire, (uint16_t)sizeof wire));
+
+  CHECK(g_bridge_a.stats.local_requests == 0, "only the bridge's own address is intercepted");
+  CHECK(g_bridge_a.stats.radio_frames_out == 1, "it should have been forwarded normally");
+}
+
+/** Every field survives encode/decode, including the extremes. */
+static void test_stat_codec_round_trip(void) {
+  lh_bridge_stat_t original;
+  uint8_t *raw = (uint8_t *)&original;
+  for (size_t i = 0; i < sizeof original; i++) raw[i] = 0;
+
+  original.uptime_ms = 0xFFFFFFFFu;
+  original.heap_free_internal = 0u;
+  original.heap_largest_block = 0x7FFFFFFFu;
+  original.heap_min_free_ever = 1u;
+  original.serial_frames_in = 0x01020304u;
+  original.serial_frames_out = 0x05060708u;
+  original.radio_frames_in = 0x090A0B0Cu;
+  original.radio_frames_out = 0x0D0E0F10u;
+  original.rejected_crc = 0x11121314u;
+  original.rejected_magic = 0x15161718u;
+  original.rejected_len = 0x191A1B1Cu;
+  original.rejected_duty_cycle = 0x1D1E1F20u;
+  original.radio_tx_errors = 0x21222324u;
+  original.serial_tx_errors = 0x25262728u;
+  original.slip_frames_ok = 0x292A2B2Cu;
+  original.slip_overflow = 0x2D2E2F30u;
+  original.slip_bad_escape = 0x31323334u;
+  original.slip_dropped = 0x35363738u;
+  original.ring_overrun = 0x393A3B3Cu;
+  original.ring_hwm = 0xFFFFu;
+  original.ring_capacity = 2048u;
+
+  uint8_t buf[LH_BRIDGE_STAT_SIZE];
+  CHECK(lh_bridge_stat_encode(&original, buf, (uint16_t)sizeof buf) == LH_BRIDGE_STAT_SIZE,
+        "encode did not write the declared size");
+
+  /* Big-endian on the wire, like the header. Mixing byte orders inside one
+   * protocol is how R0.2 gets in through a side door. */
+  CHECK(buf[0] == 0x00 && buf[1] == 0x01, "version must be big-endian");
+
+  lh_bridge_stat_t decoded;
+  CHECK(lh_bridge_stat_decode(buf, (uint16_t)sizeof buf, &decoded), "decode failed");
+  CHECK(decoded.uptime_ms == original.uptime_ms, "uptime drift");
+  CHECK(decoded.heap_largest_block == original.heap_largest_block, "largest_block drift");
+  CHECK(decoded.ring_hwm == original.ring_hwm, "ring_hwm drift");
+  CHECK(decoded.slip_dropped == original.slip_dropped, "slip_dropped drift");
+  CHECK(decoded.ring_capacity == original.ring_capacity, "ring_capacity drift");
+
+  /* A short buffer must be refused rather than half-written. */
+  CHECK(lh_bridge_stat_encode(&original, buf, LH_BRIDGE_STAT_SIZE - 1) == 0,
+        "encode should refuse a short buffer");
+  CHECK(!lh_bridge_stat_decode(buf, LH_BRIDGE_STAT_SIZE - 1, &decoded),
+        "decode should refuse a short buffer");
+}
+
+/* ------------------------------------------------------------------------- */
 /* Benchmark: the bridge's own overhead, with no airtime in it                */
 /* ------------------------------------------------------------------------- */
 
@@ -361,6 +519,10 @@ int main(void) {
   test_alien_and_short_frames_are_refused();
   test_duty_cycle_veto();
   test_worst_case_frame_survives_the_path();
+  test_stat_codec_round_trip();
+  test_stat_request_is_answered_locally();
+  test_stat_request_answered_without_health_source();
+  test_stat_type_addressed_to_a_node_is_forwarded();
 
   const int frames = 1000;
   const long losses = test_end_to_end(frames);

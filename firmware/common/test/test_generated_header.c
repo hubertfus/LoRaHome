@@ -34,6 +34,9 @@ _Static_assert((int)LH_TYPE_CMD == (int)LORAHOME_FRAME_CMD, "CMD drift");
 _Static_assert((int)LH_TYPE_CMD_ACK == (int)LORAHOME_FRAME_CMD_ACK, "CMD_ACK drift");
 _Static_assert((int)LH_TYPE_CAPABILITY_REQ == (int)LORAHOME_FRAME_CAPABILITY_REQ, "CAPABILITY_REQ drift");
 _Static_assert((int)LH_TYPE_CAPABILITY_RSP == (int)LORAHOME_FRAME_CAPABILITY_RSP, "CAPABILITY_RSP drift");
+_Static_assert((int)LH_TYPE_BRIDGE_STAT_REQ == (int)LORAHOME_FRAME_BRIDGE_STAT_REQ, "BRIDGE_STAT_REQ drift");
+_Static_assert((int)LH_TYPE_BRIDGE_STAT_RSP == (int)LORAHOME_FRAME_BRIDGE_STAT_RSP, "BRIDGE_STAT_RSP drift");
+_Static_assert(LH_BRIDGE_ID == LORAHOME_BRIDGE_ID, "bridge-local id drift: generated vs protocol.h");
 
 _Static_assert((int)LH_FLAG_ACK_REQ == (int)LORAHOME_FLAG_ACK_REQ, "ACK_REQ flag drift");
 _Static_assert((int)LH_FLAG_FRAG == (int)LORAHOME_FLAG_FRAG, "FRAG flag drift");

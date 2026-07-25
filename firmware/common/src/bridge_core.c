@@ -50,6 +50,8 @@ void lh_bridge_init(lh_bridge_ctx_t *ctx, lh_bridge_emit_fn to_radio, void *to_r
   ctx->to_host_user = to_host_user;
   ctx->allow_tx = NULL;
   ctx->allow_tx_user = NULL;
+  ctx->read_health = NULL;
+  ctx->read_health_user = NULL;
   lh_slip_init(&ctx->slip_dec, ctx->serial_rx, (uint16_t)sizeof ctx->serial_rx);
 }
 
@@ -57,6 +59,36 @@ void lh_bridge_set_duty_cycle_guard(lh_bridge_ctx_t *ctx, lh_bridge_allow_tx_fn 
                                     void *user) {
   ctx->allow_tx = allow_tx;
   ctx->allow_tx_user = user;
+}
+
+void lh_bridge_set_health_source(lh_bridge_ctx_t *ctx, lh_bridge_health_fn read_health,
+                                 void *user) {
+  ctx->read_health = read_health;
+  ctx->read_health_user = user;
+}
+
+void lh_bridge_collect_stat(const lh_bridge_ctx_t *ctx, lh_bridge_stat_t *out) {
+  memset(out, 0, sizeof *out);
+
+  /* Platform first, so the counters below cannot be clobbered by a health
+   * source that zeroes the struct it is handed. */
+  if (ctx->read_health != NULL) ctx->read_health(ctx->read_health_user, out);
+
+  out->serial_frames_in = ctx->stats.serial_frames_in;
+  out->serial_frames_out = ctx->stats.serial_frames_out;
+  out->radio_frames_in = ctx->stats.radio_frames_in;
+  out->radio_frames_out = ctx->stats.radio_frames_out;
+  out->rejected_crc = ctx->stats.rejected_crc;
+  out->rejected_magic = ctx->stats.rejected_magic;
+  out->rejected_len = ctx->stats.rejected_len;
+  out->rejected_duty_cycle = ctx->stats.rejected_duty_cycle;
+  out->radio_tx_errors = ctx->stats.radio_tx_errors;
+  out->serial_tx_errors = ctx->stats.serial_tx_errors;
+
+  out->slip_frames_ok = ctx->slip_dec.stat_frames_ok;
+  out->slip_overflow = ctx->slip_dec.stat_overflow;
+  out->slip_bad_escape = ctx->slip_dec.stat_bad_escape;
+  out->slip_dropped = ctx->slip_dec.stat_dropped;
 }
 
 /** Counts a rejection against the reason it was rejected for. */
@@ -77,6 +109,62 @@ static void count_rejection(lh_bridge_stats_t *stats, lh_bridge_verdict_t verdic
   }
 }
 
+/** SLIP-encodes a frame into the TX buffer and hands it to the Host. */
+static void emit_to_host(lh_bridge_ctx_t *ctx, const uint8_t *frame, uint16_t len) {
+  const uint16_t encoded =
+      lh_slip_encode(frame, len, ctx->serial_tx, (uint16_t)sizeof ctx->serial_tx);
+  if (encoded == 0) {
+    ctx->stats.serial_tx_errors++;
+    return;
+  }
+  if (ctx->to_host == NULL || !ctx->to_host(ctx->to_host_user, ctx->serial_tx, encoded)) {
+    ctx->stats.serial_tx_errors++;
+    return;
+  }
+  ctx->stats.serial_frames_out++;
+}
+
+/**
+ * Answers a diagnostic request instead of forwarding it.
+ *
+ * Built into `serial_tx` after the payload is assembled on the stack. 82 B of
+ * stack in a task that already has a 3 kB one is cheaper than another static
+ * buffer, and this path runs at most once every few seconds.
+ */
+static void answer_stat_request(lh_bridge_ctx_t *ctx, const lorahome_header_t *request) {
+  ctx->stats.local_requests++;
+
+  lh_bridge_stat_t stat;
+  lh_bridge_collect_stat(ctx, &stat);
+
+  uint8_t payload[LH_BRIDGE_STAT_SIZE];
+  const uint16_t payload_len = lh_bridge_stat_encode(&stat, payload, (uint16_t)sizeof payload);
+  if (payload_len == 0) {
+    ctx->stats.serial_tx_errors++;
+    return;
+  }
+
+  const lorahome_header_t header = {
+      (uint8_t)LORAHOME_FRAME_BRIDGE_STAT_RSP,
+      LORAHOME_BRIDGE_ID,
+      /* Back to whoever asked, and echoing the sequence number so a Host with
+       * more than one request outstanding can tell the replies apart. */
+      request->src_id,
+      request->seq,
+      LORAHOME_FLAG_NONE,
+  };
+
+  uint8_t frame[LORAHOME_HEADER_SIZE + LH_BRIDGE_STAT_SIZE + LORAHOME_CRC_SIZE];
+  const int frame_len =
+      lorahome_encode_frame(&header, payload, payload_len, frame, sizeof frame);
+  if (frame_len <= 0) {
+    ctx->stats.serial_tx_errors++;
+    return;
+  }
+
+  emit_to_host(ctx, frame, (uint16_t)frame_len);
+}
+
 /** One completed frame from the Host, already SLIP-decoded. */
 static void forward_to_radio(lh_bridge_ctx_t *ctx, const uint8_t *frame, uint16_t len) {
   ctx->stats.serial_frames_in++;
@@ -84,6 +172,17 @@ static void forward_to_radio(lh_bridge_ctx_t *ctx, const uint8_t *frame, uint16_
   const lh_bridge_verdict_t verdict = lh_bridge_validate(frame, len);
   if (verdict != LH_BRIDGE_ACCEPT) {
     count_rejection(&ctx->stats, verdict);
+    return;
+  }
+
+  /* Addressed to the Bridge itself: answered here, never transmitted. Checked
+   * after validation so a corrupt frame cannot trigger a reply, and before the
+   * duty cycle guard because a local answer spends no airtime. */
+  lorahome_header_t header;
+  if (lorahome_decode_header(frame, len, &header) &&
+      header.dst_id == LORAHOME_BRIDGE_ID &&
+      header.type == (uint8_t)LORAHOME_FRAME_BRIDGE_STAT_REQ) {
+    answer_stat_request(ctx, &header);
     return;
   }
 
@@ -126,17 +225,5 @@ void lh_bridge_on_radio_frame(lh_bridge_ctx_t *ctx, const uint8_t *frame, uint16
     return;
   }
 
-  const uint16_t encoded =
-      lh_slip_encode(frame, len, ctx->serial_tx, (uint16_t)sizeof ctx->serial_tx);
-  if (encoded == 0) {
-    ctx->stats.serial_tx_errors++;
-    return;
-  }
-
-  if (ctx->to_host == NULL || !ctx->to_host(ctx->to_host_user, ctx->serial_tx, encoded)) {
-    ctx->stats.serial_tx_errors++;
-    return;
-  }
-
-  ctx->stats.serial_frames_out++;
+  emit_to_host(ctx, frame, len);
 }

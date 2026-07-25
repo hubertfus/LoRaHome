@@ -45,6 +45,7 @@ const HARNESSES = [
     sources: [
       join(COMMON, 'test', 'bridge_selftest.c'),
       join(COMMON, 'src', 'bridge_core.c'),
+      join(COMMON, 'src', 'bridge_stat.c'),
       join(COMMON, 'src', 'slip.c'),
       join(COMMON, 'src', 'protocol.c'),
       join(COMMON, 'src', 'crc16.c'),

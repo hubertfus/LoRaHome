@@ -27,6 +27,7 @@
     "build:firmware": "node tools/build-firmware.mjs",
     "check:airtime": "node tools/check-airtime.mjs",
     "check:slip": "node tools/check-slip-cross.mjs",
+    "check:bridge-stat": "node tools/check-bridge-stat.mjs",
     "soak": "pnpm --filter @lorahome/tools build && node tools/dist/src/soak/link-soak-cli.js",
     "soak:selfcheck": "pnpm --filter @lorahome/tools build && node tools/dist/src/soak/link-soak-cli.js --loopback --duration 30s --interval 100ms --warmup 5s --timeout 2s --label soak.loopback",
     "bench:all": "node tools/collect-metrics.mjs",

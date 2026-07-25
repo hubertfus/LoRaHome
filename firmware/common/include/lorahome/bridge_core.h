@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "lorahome/bridge_stat.h"
 #include "lorahome/protocol.h"
 #include "lorahome/slip.h"
 
@@ -69,6 +70,8 @@ typedef struct {
   uint32_t rejected_duty_cycle;
   uint32_t radio_tx_errors;
   uint32_t serial_tx_errors;
+  /** Diagnostic requests answered locally rather than forwarded. */
+  uint32_t local_requests;
 } lh_bridge_stats_t;
 
 /** Hands a frame to the radio, or to the serial port. False means it did not go. */
@@ -83,6 +86,15 @@ typedef bool (*lh_bridge_emit_fn)(void *user, const uint8_t *data, uint16_t len)
  */
 typedef bool (*lh_bridge_allow_tx_fn)(void *user, uint16_t len);
 
+/**
+ * Fills in the platform half of a health readout: heap figures and uptime.
+ *
+ * A callback rather than a direct call to `esp_get_free_heap_size()`, because
+ * this file has no platform and the tests would not have one either. The core
+ * fills in the counters it owns; this supplies the rest.
+ */
+typedef void (*lh_bridge_health_fn)(void *user, lh_bridge_stat_t *out);
+
 typedef struct {
   uint8_t serial_rx[LH_BRIDGE_RX_SERIAL_BUF];
   uint8_t serial_tx[LH_BRIDGE_TX_SERIAL_BUF];
@@ -94,6 +106,8 @@ typedef struct {
   void *to_host_user;
   lh_bridge_allow_tx_fn allow_tx;
   void *allow_tx_user;
+  lh_bridge_health_fn read_health;
+  void *read_health_user;
 
   lh_bridge_stats_t stats;
 } lh_bridge_ctx_t;
@@ -114,6 +128,23 @@ void lh_bridge_init(lh_bridge_ctx_t *ctx, lh_bridge_emit_fn to_radio, void *to_r
 /** Optional duty-cycle veto. Without it, every well-formed frame is transmitted. */
 void lh_bridge_set_duty_cycle_guard(lh_bridge_ctx_t *ctx, lh_bridge_allow_tx_fn allow_tx,
                                     void *user);
+
+/**
+ * Enables the diagnostic reply.
+ *
+ * Without it, a BRIDGE_STAT_REQ is still answered — with the forwarding
+ * counters and zeroes for the heap. That is deliberate: a Host reading zero
+ * free heap will notice, where a Host receiving no reply at all cannot tell a
+ * silent bridge from an unconfigured one.
+ */
+void lh_bridge_set_health_source(lh_bridge_ctx_t *ctx, lh_bridge_health_fn read_health, void *user);
+
+/**
+ * Fills a health readout from the core's own counters plus the health source.
+ *
+ * Exposed so the firmware can log it locally without going through a frame.
+ */
+void lh_bridge_collect_stat(const lh_bridge_ctx_t *ctx, lh_bridge_stat_t *out);
 
 /**
  * Host → radio. Feed whatever came off the UART; frames are dispatched as they

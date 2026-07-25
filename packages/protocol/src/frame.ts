@@ -53,6 +53,18 @@ export enum FrameType {
   CMD_ACK = 0x31,
   CAPABILITY_REQ = 0x40,
   CAPABILITY_RSP = 0x41,
+  /**
+   * Bridge diagnostics, addressed to `BRIDGE_ID` and never put on air.
+   *
+   * The Bridge is the one component in the system whose memory nobody can see.
+   * It has no display, no network stack, and its serial port carries frames
+   * rather than a console — so a leak in it is invisible until the device stops
+   * responding some weeks later. These two types are how the 24-hour soak reads
+   * `heap_free` and `heap_largest_block` off it, which is the measurement the
+   * roadmap makes a release depend on.
+   */
+  BRIDGE_STAT_REQ = 0x50,
+  BRIDGE_STAT_RSP = 0x51,
 }
 
 export enum FrameFlags {
@@ -64,6 +76,16 @@ export enum FrameFlags {
 }
 
 export const BROADCAST_ID = 0xffff;
+
+/**
+ * Addresses the Bridge itself rather than anything beyond it.
+ *
+ * A frame carrying this destination is answered locally and never transmitted.
+ * 0x0000 is reserved for it and is not a valid node id — the alternative, a
+ * magic node id somewhere in the normal range, would eventually collide with a
+ * real device and send diagnostics into the air.
+ */
+export const BRIDGE_ID = 0x0000;
 
 export interface FrameHeader {
   /**

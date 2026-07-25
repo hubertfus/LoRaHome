@@ -14,6 +14,14 @@ export {
   type SerialTransportStats,
 } from './transport/serial.js';
 export { SlipDecoder, slipEncode, slipEncodedMax, SlipState } from './transport/slip.js';
+export {
+  BRIDGE_STAT_SIZE,
+  BRIDGE_STAT_VERSION,
+  decodeBridgeStat,
+  encodeBridgeStat,
+  type BridgeStat,
+} from './transport/bridge-stat.js';
+export { BridgeHealthClient, type BridgeHealthClientOptions } from './transport/bridge-health.js';
 
 export async function buildServer() {
   const app = Fastify({ logger: true });

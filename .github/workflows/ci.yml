@@ -152,6 +152,13 @@ jobs:
       - name: Cross-language SLIP (C vs TypeScript)
         run: node tools/check-slip-cross.mjs
 
+      # The Bridge encodes its health readout in C and the Host decodes it in
+      # TypeScript. A field-order disagreement here would not error — it would
+      # report a plausible, wrong heap figure, which is the worst failure mode
+      # available to a leak detector.
+      - name: Cross-language bridge stat payload (C vs TypeScript)
+        run: node tools/check-bridge-stat.mjs
+
       # ubuntu-latest ships gcc, so the host x86-64 ABI and the native
       # cross-language CRC comparison both run here — neither can run on a
       # developer machine without a host toolchain.

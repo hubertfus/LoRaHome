@@ -316,7 +316,26 @@ Rejections are counted by cause, not lumped together, because in the field the t
 
 Checks run in that order, so a two-byte fragment is reported as a length error rather than a CRC error even though its CRC would also fail.
 
-Buffers are static and sized by derivation. `LH_BRIDGE_TX_SERIAL_BUF` is `LH_SLIP_ENCODED_MAX(256)` = **514 bytes, not 512** — the two-byte shortfall in the original sketch is exactly enough to fail on a maximum-length frame whose every byte needs escaping (R1.1). There is no separate radio transmit buffer: a decoded frame goes to the radio as a pointer into the SLIP receive buffer, per the zero-copy rule. The whole context is 896 B against a 2560 B budget.
+Buffers are static and sized by derivation. `LH_BRIDGE_TX_SERIAL_BUF` is `LH_SLIP_ENCODED_MAX(256)` = **514 bytes, not 512** — the two-byte shortfall in the original sketch is exactly enough to fail on a maximum-length frame whose every byte needs escaping (R1.1). There is no separate radio transmit buffer: a decoded frame goes to the radio as a pointer into the SLIP receive buffer, per the zero-copy rule. The whole context is 920 B against a 2560 B budget.
+
+### 7.5. Bridge diagnostics
+
+The Bridge is the only component in the system whose memory nobody can see. No display, no network stack, and a serial port carrying frames rather than a console — so a slow leak in it is invisible until the device stops answering, some weeks in. That is unacceptable for the component the roadmap makes a release depend on:
+
+> `heap_free.end - heap_free.start` is the most important number in the whole project. If the drift is non-zero we have a leak and the release must not be tagged.
+
+So the Bridge answers questions about itself. A frame of type `BRIDGE_STAT_REQ` addressed to `BRIDGE_ID` (`0x0000`, reserved and never a valid node id) is **answered locally and never transmitted**; the reply is a `BRIDGE_STAT_RSP` carrying an 82-byte fixed-layout payload. The same frame type addressed to any other destination is ordinary traffic and goes on air normally.
+
+The payload carries three groups: the §0.4 memory probe (`heap_free_internal`, `heap_largest_block`, `heap_min_free_ever`, uptime), the forwarding counters from §7.4, and the SLIP and ring health from §7.1–7.2. `heap_largest_block` is there for the same reason §0.4 insists on it — 180 kB free in fragments too small for a 4 kB buffer is a device that dies in week three, and the free total alone cannot show that.
+
+Design points, each with a reason:
+
+- **Not CBOR.** The Bridge does not interpret CBOR anywhere else, and a diagnostic frame is not the place to introduce a decoder to it. Fixed offsets, big-endian, same byte order as the frame header.
+- **Interception happens after validation, before the duty-cycle guard.** After, so a corrupt frame cannot trigger a reply; before, because a local answer spends no airtime.
+- **A Bridge with no health source still answers**, with the counters filled in and zeroes for the heap. A Host reading zero free heap will notice; a Host receiving nothing cannot distinguish a silent bridge from an unconfigured one.
+- **A malformed reply is dropped, not parsed.** The Host lets the request time out instead, because a gap in the series is visible and a heap figure read from the wrong offset is fiction that looks like data.
+
+Two implementations exist (C encoder, TypeScript decoder) and are held together by `tools/check-bridge-stat.mjs`: 200 rows including all-zero, all-ones, and one row per field set in isolation, so two fields swapped in one language cannot cancel out.
 2. **Duty cycle tracker**: ETSI EN 300 220 mandates a hard 1% transmit-time limit on 868 MHz (per channel, within a 1-hour window). The Bridge tracks actual airtime (based on frame size and SF/BW) and **refuses to transmit** if it would exceed this limit — regardless of whether the Host (Duty Cycle Guard) already checked it earlier. Two independent layers of defense.
 3. **Retransmissions**: for frames with the `ACK_REQ` flag, the Bridge manages the timeout and resend (up to a configured retry limit) before reporting an error to the Host.
 4. **Time windows**: a simple TDMA-lite scheme — the Bridge assigns time slots to nodes to minimize collisions in denser P2P networks, without needing full mesh routing.
