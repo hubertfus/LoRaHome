@@ -202,6 +202,12 @@ function msvcToolchain() {
         'cl.exe',
         [
           ...WARNING_FLAGS.msvc,
+          // MSVC treats the standard C library as deprecated in favour of its
+          // own _s variants, which do not exist anywhere else. Under /WX that
+          // turns portable, correct C into a build failure. The firmware has to
+          // compile under GCC for the targets that ship, so the standard
+          // functions stay and this warning goes.
+          '/D_CRT_SECURE_NO_WARNINGS',
           OPT_FLAGS.msvc[optimize],
           // /Fd alongside /Zi: without it cl.exe drops a vc140.pdb into the
           // current working directory, which here is the repository root.

@@ -103,6 +103,8 @@ const HIGHER_IS_BETTER = [
   'wraparound_bytes',
   'harnesses_run',
   'sanitized_runs',
+  'cross_lang',
+  'images_linked',
 ];
 
 function isHigherBetter(name: string): boolean {

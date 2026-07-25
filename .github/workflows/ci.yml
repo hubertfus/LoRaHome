@@ -133,6 +133,12 @@ jobs:
       - name: Link firmware images and check size budgets
         run: node tools/build-firmware.mjs
 
+      # The Host and the Bridge enforce the ETSI duty cycle independently, which
+      # is only worth anything if they agree on what a frame costs on air. A
+      # drift here is a compliance bug, not a rounding one.
+      - name: Cross-language airtime (C vs TypeScript)
+        run: node tools/check-airtime.mjs
+
       # ubuntu-latest ships gcc, so the host x86-64 ABI and the native
       # cross-language CRC comparison both run here — neither can run on a
       # developer machine without a host toolchain.

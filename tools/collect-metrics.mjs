@@ -27,6 +27,7 @@ const STEPS = [
   { id: 'targets', command: 'node tools/compile-targets.mjs' },
   { id: 'native', command: 'node tools/run-native.mjs' },
   { id: 'firmware', command: 'node tools/build-firmware.mjs' },
+  { id: 'airtime', command: 'node tools/check-airtime.mjs' },
   { id: 'protocol-bench', command: 'pnpm --filter @lorahome/protocol bench' },
 ];
 

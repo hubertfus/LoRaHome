@@ -25,6 +25,7 @@
     "check:targets": "node tools/compile-targets.mjs",
     "test:native": "node tools/run-native.mjs",
     "build:firmware": "node tools/build-firmware.mjs",
+    "check:airtime": "node tools/check-airtime.mjs",
     "bench:all": "node tools/collect-metrics.mjs",
     "bench:baseline": "node tools/collect-metrics.mjs --write-baseline",
     "test:all": "pnpm -r test",

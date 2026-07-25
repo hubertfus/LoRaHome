@@ -46,12 +46,16 @@ static void handleFrameFromHost(const uint8_t* frame, size_t len) {
   lorahome_header_t header;
   if (!lorahome_decode_header(frame, len, &header)) return;
 
+  // Taken from LoraProfile rather than restated. The tracker has to be spending
+  // the airtime the radio is actually about to use; if these two drift apart,
+  // the bridge is wrong about an ETSI limit, which is the one accounting error
+  // here with a legal consequence rather than a technical one.
   const lorahome_airtime_params_t airtimeParams = {
       static_cast<uint16_t>(len),
-      /*spreading_factor=*/9,
-      /*bandwidth_hz=*/125000,
-      /*coding_rate=*/1,
-      /*preamble_symbols=*/8,
+      LoraProfile::kSpreadingFactor,
+      LoraProfile::kBandwidthHz,
+      LoraProfile::kAirtimeCodingRate,
+      static_cast<uint8_t>(LoraProfile::kPreambleSymbols),
   };
   const uint32_t durationMs = static_cast<uint32_t>(lorahome_compute_airtime_ms(&airtimeParams));
 

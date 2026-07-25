@@ -270,6 +270,30 @@ Three properties are load-bearing:
 Two buffers sit in series (the IDF driver's and ours) and that is deliberate: the driver's absorbs interrupt-to-schedule latency, ours absorbs the far longer consumer-side stalls.
 
 Allocation after `setup()` is zero. The reader task uses a static stack and TCB via `xTaskCreateStatic`; the ring is a member. `uart_driver_install()` allocates once during init, which §0.6 permits — the budget is zero `malloc` *after* `app_main`.
+
+### 7.3. The radio profile, and what it costs
+
+`LoraProfile` (`firmware/common/include/lorahome/lora_transport.h`) is the single definition of how the radio is configured. Frequency, bandwidth and sync word must match bit-for-bit on both ends or there is simply silence on the air, which is the most expensive failure mode to debug — so they are named in one place rather than spread across call sites.
+
+| Setting | Value | Why |
+|---|---|---|
+| Frequency | 868.1 MHz | First of the three 868 MHz channels ETSI leaves at 1% duty cycle |
+| Spreading factor | SF9 | Range/airtime compromise for Etap 1 |
+| Bandwidth | 125 kHz | |
+| Coding rate | 4/5 | |
+| Preamble | 8 symbols | |
+| Sync word | 0x12 (private) | Keeps us off LoRaWAN networks and them off us |
+| TX power | 14 dBm | ETSI ceiling for this band |
+
+**Time on air at this profile is 1147.9 ms for a full 230 B frame** (Semtech AN1200.22; C and TypeScript agree across a 336-point parameter grid). Under the ETSI 1% limit that means **one full frame every 114.8 s** per channel.
+
+> This corrects the ~390 ms figure carried in earlier planning notes, which is an SF7 number, not SF9. The difference is roughly 3×, and it propagates: anything sized against a 390 ms frame — transmit intervals, end-to-end latency targets, how many config fragments fit in an hour — needs re-deriving from 1147.9 ms. The calculation itself was never wrong; both implementations have always followed AN1200.22. Only the number quoted in prose was.
+>
+> Still owed: verification against a real transmission (SDR or logic analyser). Two implementations agreeing proves they share a formula, not that the formula matches the radio.
+
+Transmission is non-blocking (`startTransmit()` + DIO1 interrupt), and so is reception. At over a second per frame, a blocking `transmit()` would leave the Bridge deaf to the UART for that whole time and overflow its receive ring — risk R1.3. The interrupt handler sets one flag; `poll()` does the work.
+
+While transmitting, the radio cannot hear. A frame arriving in that window is lost, and Etap 1 accepts that; retransmission and jitter are Etap 2's problem (risk R1.4). It is a recorded debt, not an oversight.
 2. **Duty cycle tracker**: ETSI EN 300 220 mandates a hard 1% transmit-time limit on 868 MHz (per channel, within a 1-hour window). The Bridge tracks actual airtime (based on frame size and SF/BW) and **refuses to transmit** if it would exceed this limit — regardless of whether the Host (Duty Cycle Guard) already checked it earlier. Two independent layers of defense.
 3. **Retransmissions**: for frames with the `ACK_REQ` flag, the Bridge manages the timeout and resend (up to a configured retry limit) before reporting an error to the Host.
 4. **Time windows**: a simple TDMA-lite scheme — the Bridge assigns time slots to nodes to minimize collisions in denser P2P networks, without needing full mesh routing.
