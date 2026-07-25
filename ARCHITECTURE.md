@@ -294,6 +294,29 @@ Allocation after `setup()` is zero. The reader task uses a static stack and TCB 
 Transmission is non-blocking (`startTransmit()` + DIO1 interrupt), and so is reception. At over a second per frame, a blocking `transmit()` would leave the Bridge deaf to the UART for that whole time and overflow its receive ring — risk R1.3. The interrupt handler sets one flag; `poll()` does the work.
 
 While transmitting, the radio cannot hear. A frame arriving in that window is lost, and Etap 1 accepts that; retransmission and jitter are Etap 2's problem (risk R1.4). It is a recorded debt, not an oversight.
+
+### 7.4. The forwarding path
+
+All of the Bridge's decisions live in `firmware/common/src/bridge_core.c` as plain C, with the UART, the radio and the clock reaching it through function pointers. `firmware/bridge/src/main.cpp` is wiring. The forwarding logic that ships is therefore the same code the end-to-end test drives a thousand frames through, rather than a second implementation that resembles it.
+
+```
+Host →SLIP→ [ decode → validate → duty-cycle → TX ] →air→ [ RX → validate → SLIP ] → Host
+```
+
+**Validation before transmission is mandatory, in both directions.** A malformed frame costs the same 1147.9 ms of airtime as a good one, out of a budget that permits about one full frame every two minutes — spending that on a frame already known to be broken is the most expensive mistake this component can make. In the radio→Host direction, validating stops one bad RF moment from becoming a puzzle further up the stack.
+
+Rejections are counted by cause, not lumped together, because in the field the three mean different things:
+
+| Counter | Meaning | What it points at |
+|---|---|---|
+| `rejected_len` | Shorter than header+CRC, or over the MTU | A misconfigured sender |
+| `rejected_magic` | Not one of our frames | Someone else's traffic on our sync word |
+| `rejected_crc` | Ours, but corrupted | A marginal RF link |
+| `rejected_duty_cycle` | Well-formed, but out of budget | Working as designed |
+
+Checks run in that order, so a two-byte fragment is reported as a length error rather than a CRC error even though its CRC would also fail.
+
+Buffers are static and sized by derivation. `LH_BRIDGE_TX_SERIAL_BUF` is `LH_SLIP_ENCODED_MAX(256)` = **514 bytes, not 512** — the two-byte shortfall in the original sketch is exactly enough to fail on a maximum-length frame whose every byte needs escaping (R1.1). There is no separate radio transmit buffer: a decoded frame goes to the radio as a pointer into the SLIP receive buffer, per the zero-copy rule. The whole context is 896 B against a 2560 B budget.
 2. **Duty cycle tracker**: ETSI EN 300 220 mandates a hard 1% transmit-time limit on 868 MHz (per channel, within a 1-hour window). The Bridge tracks actual airtime (based on frame size and SF/BW) and **refuses to transmit** if it would exceed this limit — regardless of whether the Host (Duty Cycle Guard) already checked it earlier. Two independent layers of defense.
 3. **Retransmissions**: for frames with the `ACK_REQ` flag, the Bridge manages the timeout and resend (up to a configured retry limit) before reporting an error to the Host.
 4. **Time windows**: a simple TDMA-lite scheme — the Bridge assigns time slots to nodes to minimize collisions in denser P2P networks, without needing full mesh routing.

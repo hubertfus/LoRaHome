@@ -65,6 +65,15 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'bridge_core',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'bridge_core.c'),
+    measureText: true,
+    textBudget: 2048, // T1.4
+    // Carries the _Static_assert on sizeof(lh_bridge_ctx_t) — the Etap 1 RAM
+    // budget for the whole forwarding context.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'slip',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'slip.c'),
     measureText: true,

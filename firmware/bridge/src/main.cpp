@@ -1,10 +1,23 @@
+/*
+ * The Bridge: Serial <-> LoRa frame translator. Roadmap T1.4.
+ *
+ * This file is glue and nothing else. Every decision about whether a frame is
+ * well formed, whether it may go on air and which counter a rejection belongs
+ * to lives in firmware/common/src/bridge_core.c, where it is tested a thousand
+ * frames at a time on a host. What is left here is the four things that need
+ * real hardware: a UART, a radio, a clock, and the wiring between them.
+ *
+ * That split is the point. The forwarding logic that ships is the same code the
+ * end-to-end test exercises, rather than a second implementation that resembles
+ * it.
+ */
 #include <Arduino.h>
 #include <RadioLib.h>
+
 #include "duty_cycle_tracker.h"
 #include "lorahome/airtime.h"
+#include "lorahome/bridge_core.h"
 #include "lorahome/lora_transport.h"
-#include "lorahome/protocol.h"
-#include "lorahome/slip.h"
 #include "serial_link.h"
 
 using namespace lorahome;
@@ -13,90 +26,71 @@ static SX1262 g_radio = new Module(/*cs=*/18, /*irq=*/26, /*rst=*/23, /*gpio=*/3
 static LoraTransport g_transport(&g_radio);
 static SerialLink g_serial;
 
-// ETSI EN 300 220: 1% duty cycle over a rolling 1h window on 868MHz.
+// ETSI EN 300 220: 1% duty cycle over a rolling 1 h window on 868 MHz. At this
+// profile a full 230 B frame costs 1147.9 ms, so the budget permits roughly one
+// such frame every 115 s per channel.
 static DutyCycleTracker g_dutyCycle(0.01f, 60UL * 60UL * 1000UL);
 
-static uint8_t g_serialRxBuf[512];
-static lh_slip_decoder_t g_serialDecoder;
+// One global instance, statically allocated, for the lifetime of the program —
+// the project's standing rule for anything that owns a buffer.
+static lh_bridge_ctx_t g_bridge;
 
-// Risk R1.1: a TX buffer sized for the typical frame survives every test and
-// overruns the first time a payload happens to be all 0xC0. Derived from the
-// RX buffer rather than written as a literal, so the two cannot drift apart.
-static uint8_t g_slipEncodeBuf[LH_SLIP_ENCODED_MAX(sizeof(g_serialRxBuf))];
-
-// Encoded lengths are uint16_t all the way through the codec. At 512 B of RX
-// buffer that is nowhere near the limit — but the day somebody raises the RX
-// buffer to 40 kB, this fails the build instead of silently truncating.
-static_assert(LH_SLIP_ENCODED_MAX(sizeof(g_serialRxBuf)) <= UINT16_MAX,
-              "SLIP encoded frame no longer fits the uint16_t length type");
-
-static void sendToHost(const uint8_t* frame, size_t len) {
-  const uint16_t encodedLen = lh_slip_encode(frame, static_cast<uint16_t>(len), g_slipEncodeBuf,
-                                             static_cast<uint16_t>(sizeof(g_slipEncodeBuf)));
-  if (encodedLen == 0) return;  // no room for the worst case — drop rather than corrupt
-  g_serial.write(g_slipEncodeBuf, encodedLen);
-}
-
-static void onLoraFrameReceived(const uint8_t* data, size_t len, uint16_t srcId) {
-  (void)srcId;
-  sendToHost(data, len);
-}
-
-static void handleFrameFromHost(const uint8_t* frame, size_t len) {
-  lorahome_header_t header;
-  if (!lorahome_decode_header(frame, len, &header)) return;
-
-  // Taken from LoraProfile rather than restated. The tracker has to be spending
-  // the airtime the radio is actually about to use; if these two drift apart,
-  // the bridge is wrong about an ETSI limit, which is the one accounting error
-  // here with a legal consequence rather than a technical one.
-  const lorahome_airtime_params_t airtimeParams = {
-      static_cast<uint16_t>(len),
+/**
+ * Duty cycle veto.
+ *
+ * Airtime is derived from LoraProfile so the tracker spends exactly what the
+ * radio is about to use. The Host has its own guard; this is the second,
+ * independent line of defence (ARCHITECTURE.md §7), and it is the one that
+ * still works when the Host is wrong.
+ */
+static bool allowTransmit(void* /*user*/, uint16_t len) {
+  const lorahome_airtime_params_t params = {
+      len,
       LoraProfile::kSpreadingFactor,
       LoraProfile::kBandwidthHz,
       LoraProfile::kAirtimeCodingRate,
       static_cast<uint8_t>(LoraProfile::kPreambleSymbols),
   };
-  const uint32_t durationMs = static_cast<uint32_t>(lorahome_compute_airtime_ms(&airtimeParams));
+  const uint32_t durationMs = static_cast<uint32_t>(lorahome_compute_airtime_ms(&params));
+  return g_dutyCycle.tryRecord(durationMs, millis());
+}
 
-  if (!g_dutyCycle.tryRecord(durationMs, millis())) {
-    // Refuse to transmit — the Host's own Duty Cycle Guard should have
-    // caught this already; this is the second, independent line of
-    // defense (ARCHITECTURE.md §7).
-    return;
-  }
+/** Validated frame on its way to the air. The pointer aims into the SLIP buffer. */
+static bool emitToRadio(void* /*user*/, const uint8_t* frame, uint16_t len) {
+  return g_transport.send(frame, len, /*dstId=*/0);
+}
 
-  g_transport.send(frame, len, header.dst_id);
-  // TODO(retransmit): if header.flags & LORAHOME_FLAG_ACK_REQ, start a
-  // retry timer and resend on timeout up to a configured retry limit.
+/** Already SLIP-encoded by the core; this only has to put bytes on the wire. */
+static bool emitToHost(void* /*user*/, const uint8_t* bytes, uint16_t len) {
+  return g_serial.write(bytes, len) == len;
+}
+
+static void onLoraFrameReceived(const uint8_t* data, size_t len, uint16_t /*srcId*/) {
+  lh_bridge_on_radio_frame(&g_bridge, data, static_cast<uint16_t>(len));
 }
 
 void setup() {
   g_serial.begin();
+
+  lh_bridge_init(&g_bridge, emitToRadio, nullptr, emitToHost, nullptr);
+  lh_bridge_set_duty_cycle_guard(&g_bridge, allowTransmit, nullptr);
+
   g_transport.begin();
   g_transport.onReceive(onLoraFrameReceived);
-  lh_slip_init(&g_serialDecoder, g_serialRxBuf, sizeof(g_serialRxBuf));
 }
 
 void loop() {
+  // Completes whatever the last DIO1 interrupt started — a finished
+  // transmission, or a packet waiting to be read.
   g_transport.poll();
 
-  // Drained in blocks rather than a byte at a time: the reader task is filling
-  // the ring concurrently, and one bulk pop per pass costs one fence instead of
-  // one per byte. SLIP decoding stays on this side of the ring — that is the
-  // whole point of the split (risk R1.2).
+  // Drained in blocks: the reader task is filling the ring concurrently, and one
+  // bulk pop per pass costs one fence instead of one per byte. All protocol work
+  // happens on this side of the ring, never on the receive path (risk R1.2).
   static uint8_t block[128];
   for (;;) {
     const uint16_t received = g_serial.read(block, sizeof(block));
     if (received == 0) break;
-
-    for (uint16_t i = 0; i < received; i++) {
-      // The frame stays valid only until the next feed, so it is handled here
-      // and now. LH_SLIP_ERROR needs no branch: the decoder has already counted
-      // the damaged frame and resynchronised itself.
-      if (lh_slip_feed(&g_serialDecoder, block[i]) == LH_SLIP_FRAME_READY) {
-        handleFrameFromHost(g_serialDecoder.buf, g_serialDecoder.len);
-      }
-    }
+    lh_bridge_feed_serial(&g_bridge, block, received);
   }
 }

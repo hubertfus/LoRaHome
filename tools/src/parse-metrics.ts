@@ -105,6 +105,7 @@ const HIGHER_IS_BETTER = [
   'sanitized_runs',
   'cross_lang',
   'images_linked',
+  'e2e_frames',
 ];
 
 function isHigherBetter(name: string): boolean {

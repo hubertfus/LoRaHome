@@ -40,6 +40,16 @@ const HARNESSES = [
     id: 'ring',
     sources: [join(COMMON, 'test', 'ring_selftest.c'), join(COMMON, 'src', 'ring.c')],
   },
+  {
+    id: 'bridge',
+    sources: [
+      join(COMMON, 'test', 'bridge_selftest.c'),
+      join(COMMON, 'src', 'bridge_core.c'),
+      join(COMMON, 'src', 'slip.c'),
+      join(COMMON, 'src', 'protocol.c'),
+      join(COMMON, 'src', 'crc16.c'),
+    ],
+  },
 ];
 
 const toolchain = findHostToolchain();
