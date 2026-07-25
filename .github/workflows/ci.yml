@@ -132,6 +132,15 @@ jobs:
       - name: Native firmware self-tests (incl. sanitized fuzz run)
         run: node tools/run-native.mjs
 
+      # The Unity suites in firmware/node/test. PlatformIO has declared a
+      # `native` environment for them since the scaffold and nothing ever ran
+      # it — 22 cases that existed and were never executed. Keeping them green
+      # on the host is what keeps them honest as on-target tests: a Unity file
+      # that has drifted out of compiling is a test nobody can run when the
+      # board arrives.
+      - name: Native Unity suites
+        run: node tools/run-unit-tests.mjs
+
       # Compiling translation units one at a time proves the C is sound; it does
       # not prove the images link, and it says nothing about the two §0.6
       # budgets that are properties of the whole image (static RAM, flash).

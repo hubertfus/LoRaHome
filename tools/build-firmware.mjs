@@ -20,10 +20,9 @@
  * not what this measures.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findPlatformIO, platformioVersion } from './platformio.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -47,29 +46,6 @@ const IMAGES = [
   },
 ];
 
-function findPlatformIO() {
-  const candidates = [
-    join(homedir(), '.platformio', 'penv', 'Scripts', 'platformio.exe'),
-    join(homedir(), '.platformio', 'penv', 'bin', 'platformio'),
-    'platformio',
-    'pio',
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate.includes('/') || candidate.includes('\\')) {
-      if (existsSync(candidate)) return candidate;
-      continue;
-    }
-    try {
-      execFileSync(candidate, ['--version'], { stdio: 'ignore' });
-      return candidate;
-    } catch {
-      /* not on PATH */
-    }
-  }
-  return null;
-}
-
 /** `RAM:   [=    ]   8.0% (used 26136 bytes from 327680 bytes)` */
 function parseUsage(output, label) {
   const match = output.match(
@@ -86,12 +62,7 @@ if (pio === null) {
   process.exit(0);
 }
 
-try {
-  const version = execFileSync(pio, ['--version'], { encoding: 'utf8', stdio: 'pipe' }).trim();
-  console.log(`LH_ENV toolchain.platformio=${version}`);
-} catch {
-  /* version is provenance, not a gate */
-}
+console.log(`LH_ENV toolchain.platformio=${platformioVersion(pio)}`);
 
 let linked = 0;
 let failed = 0;

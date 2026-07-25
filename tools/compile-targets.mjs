@@ -15,8 +15,9 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { windowsGnuCandidates } from './host-cc.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const INCLUDE_DIR = join(REPO_ROOT, 'firmware', 'common', 'include');
@@ -106,7 +107,11 @@ const TARGETS = [
   {
     id: 'x86-64',
     description: 'host gcc/clang',
-    candidates: ['gcc', 'cc', 'clang'],
+    // MSYS2 keeps its compilers off the Windows PATH on purpose — its own
+    // shells add them, `cmd` does not. The candidate list comes from
+    // host-cc.mjs so there is one answer in the repo to "where is gcc", not
+    // one per tool that needs it.
+    candidates: ['gcc', 'cc', 'clang', ...windowsGnuCandidates()],
     extraFlags: [],
   },
   {
@@ -142,6 +147,22 @@ function resolveCompiler(candidates) {
 }
 
 /**
+ * Environment for a compiler given by absolute path.
+ *
+ * A MinGW `gcc.exe` is a driver that spawns `cc1.exe`, `as.exe` and `ld.exe`,
+ * and those load DLLs from the toolchain's own `bin`. Windows searches only the
+ * *initial* executable's directory, so gcc starts, its children do not, and the
+ * whole thing exits non-zero having printed nothing whatsoever. Prepending the
+ * directory here keeps the fix scoped to this process instead of the machine's
+ * PATH. The ESP cross compilers are self-contained and unaffected.
+ */
+function environmentFor(compiler) {
+  if (!compiler.includes('/') && !compiler.includes('\\')) return process.env;
+  const currentPath = process.env.PATH ?? process.env.Path ?? '';
+  return { ...process.env, PATH: `${dirname(compiler)}${delimiter}${currentPath}` };
+}
+
+/**
  * First line of `<compiler> --version`.
  *
  * Emitted as LH_ENV so the collector can record which toolchain produced a size
@@ -152,7 +173,11 @@ function resolveCompiler(candidates) {
  */
 function compilerVersion(compiler) {
   try {
-    const output = execFileSync(compiler, ['--version'], { encoding: 'utf8', stdio: 'pipe' });
+    const output = execFileSync(compiler, ['--version'], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      env: environmentFor(compiler),
+    });
     return output.split('\n')[0]?.trim() ?? 'unknown';
   } catch {
     return 'unknown';
@@ -182,20 +207,44 @@ function sizeToolFor(compiler) {
  * a trade of one against the other, so they have to be visible apart.
  */
 function sectionSizes(sizeTool, objectFile) {
-  const output = execFileSync(sizeTool, ['-A', objectFile], { encoding: 'utf8' });
+  const output = execFileSync(sizeTool, ['-A', objectFile], {
+    encoding: 'utf8',
+    env: environmentFor(sizeTool),
+  });
   const sections = new Map();
   for (const line of output.split('\n')) {
-    const match = line.trim().match(/^(\.[\w.]+)\s+(\d+)/);
+    // `$` belongs in the character class: COFF names a per-symbol section
+    // `.text$lorahome_crc16`, and without it those lines were silently skipped
+    // and every section-split unit measured 0 B.
+    const match = line.trim().match(/^(\.[\w.$]+)\s+(\d+)/);
     if (match) sections.set(match[1], Number(match[2]));
   }
   return sections;
 }
 
-/** Sums a section and its per-function/per-object split (.text.foo, .rodata.bar). */
-function sectionTotal(sections, prefix) {
+/**
+ * Sums a section and its per-symbol split across both object formats.
+ *
+ * ELF spells the split `.text.foo`; COFF — which MinGW produces — spells it
+ * `.text$foo`, and calls read-only data `.rdata` rather than `.rodata`. Matching
+ * only the ELF spelling reported a confident 0 B for every unit on the host
+ * target, which is worse than reporting nothing: a size of zero sails under any
+ * budget and looks like a pass.
+ *
+ * `.xdata` and `.pdata` are deliberately excluded. They are Windows SEH unwind
+ * tables with no ESP32 equivalent, and folding them into `.text` would make the
+ * host number describe the platform rather than the code.
+ */
+function sectionTotal(sections, prefixes) {
+  const wanted = Array.isArray(prefixes) ? prefixes : [prefixes];
   let total = 0;
   for (const [name, size] of sections) {
-    if (name === prefix || name.startsWith(`${prefix}.`)) total += size;
+    for (const prefix of wanted) {
+      if (name === prefix || name.startsWith(`${prefix}.`) || name.startsWith(`${prefix}$`)) {
+        total += size;
+        break;
+      }
+    }
   }
   return total;
 }
@@ -233,7 +282,7 @@ try {
             '-o',
             objectFile,
           ],
-          { stdio: 'pipe' },
+          { stdio: 'pipe', env: environmentFor(compiler) },
         );
 
         if (unit.measureText) {
@@ -243,15 +292,22 @@ try {
             textSizes.push({
               target: target.id,
               unit: unit.id,
-              bytes: sectionTotal(sections, '.text'),
-              rodata: sectionTotal(sections, '.rodata'),
+              bytes: sectionTotal(sections, ['.text']),
+              rodata: sectionTotal(sections, ['.rodata', '.rdata']),
               budget: unit.textBudget,
             });
           }
         }
       } catch (error) {
+        // Both streams, and the exit status when both are empty. A MinGW driver
+        // whose cc1.exe cannot load its DLLs prints nothing at all, and a bare
+        // "FAIL" line with no explanation under it cost real time to diagnose.
+        const streams = `${error?.stdout ?? ''}${error?.stderr ?? ''}`.trim();
         const detail =
-          error instanceof Error && 'stderr' in error ? String(error.stderr) : String(error);
+          streams !== ''
+            ? streams
+            : `exited with status ${error?.status ?? '?'} and produced no diagnostic` +
+              ` (a MinGW driver does this when its helper executables cannot load their DLLs)`;
         console.error(`FAIL     ${target.id.padEnd(8)} ${unit.id} — ${target.description}\n${detail}`);
         targetOk = false;
       }

@@ -24,6 +24,7 @@
     "gen:c:check": "pnpm --filter @lorahome/protocol gen:c -- --check",
     "check:targets": "node tools/compile-targets.mjs",
     "test:native": "node tools/run-native.mjs",
+    "test:unity": "node tools/run-unit-tests.mjs",
     "build:firmware": "node tools/build-firmware.mjs",
     "check:airtime": "node tools/check-airtime.mjs",
     "check:slip": "node tools/check-slip-cross.mjs",

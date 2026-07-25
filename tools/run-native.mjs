@@ -24,7 +24,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { exeName, findHostToolchain, spawnFailureDetail } from './host-cc.mjs';
+import {
+  exeName,
+  findHostToolchains,
+  findSanitizingToolchain,
+  spawnFailureDetail,
+} from './host-cc.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const COMMON = join(REPO_ROOT, 'firmware', 'common');
@@ -53,7 +58,8 @@ const HARNESSES = [
   },
 ];
 
-const toolchain = findHostToolchain();
+const toolchains = findHostToolchains();
+const toolchain = toolchains[0] ?? null;
 
 if (toolchain === null) {
   console.log('SKIPPED  no host C toolchain (gcc, clang or MSVC) — native harnesses not run');
@@ -61,8 +67,21 @@ if (toolchain === null) {
   process.exit(0);
 }
 
+/**
+ * The sanitized pass may use a different compiler from the timed one.
+ *
+ * On Windows with MinGW installed, the preferred toolchain has the GNU warning
+ * set the firmware is written against but no libasan, while MSVC has ASAN.
+ * Taking the best of each keeps both guarantees; insisting on one compiler for
+ * both would quietly drop whichever it could not provide.
+ */
+const sanitizer = findSanitizingToolchain(toolchains);
+
 console.log(`LH_ENV toolchain.native=${toolchain.version}`);
-console.log(`LH_ENV native.sanitizers=${toolchain.sanitizers}`);
+console.log(`LH_ENV native.sanitizers=${sanitizer === null ? 'none' : sanitizer.sanitizers}`);
+if (sanitizer !== null && sanitizer !== toolchain) {
+  console.log(`LH_ENV toolchain.native_sanitized=${sanitizer.version}`);
+}
 
 const workDir = mkdtempSync(join(tmpdir(), 'lh-native-'));
 let failures = 0;
@@ -78,7 +97,8 @@ let sanitizedRuns = 0;
  * series would record whichever build happened to run second.
  */
 function runVariant(harness, { sanitize, forwardMetrics }) {
-  const label = sanitize ? toolchain.sanitizers : 'plain';
+  const cc = sanitize ? sanitizer : toolchain;
+  const label = sanitize ? cc.sanitizers : 'plain';
 
   for (let attempt = 1; ; attempt++) {
     // A fresh output path per attempt — see buildAndRun's note on why retrying
@@ -87,7 +107,7 @@ function runVariant(harness, { sanitize, forwardMetrics }) {
     const output = join(workDir, exeName(`${harness.id}-${sanitize ? 'san' : 'plain'}${suffix}`));
 
     try {
-      toolchain.compile({
+      cc.compile({
         sources: harness.sources,
         includeDirs: [INCLUDE_DIR],
         output,
@@ -107,7 +127,7 @@ function runVariant(harness, { sanitize, forwardMetrics }) {
       stdout = execFileSync(output, [], {
         encoding: 'utf8',
         stdio: 'pipe',
-        env: toolchain.env,
+        env: cc.env,
         maxBuffer: 32 * 1024 * 1024,
       });
     } catch (error) {
@@ -178,8 +198,8 @@ try {
     }
     harnessesRun++;
 
-    if (!toolchain.supportsSanitizer) {
-      console.log(`SKIPPED  ${harness.id} (sanitized) — sanitizer runtime unavailable`);
+    if (sanitizer === null) {
+      console.log(`SKIPPED  ${harness.id} (sanitized) — no toolchain here provides one`);
       continue;
     }
     if (runVariant(harness, { sanitize: true, forwardMetrics: false })) sanitizedRuns++;

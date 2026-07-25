@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import fc from 'fast-check';
 import { crc16, CRC16_CHECK, CRC16_INIT, crc16Reference } from '../src/crc16.js';
 import { LORA_MTU } from '../src/frame.js';
@@ -145,20 +145,36 @@ test('a trailing zero byte is not transparent', () => {
 // Cross-language: the same vectors through the real C implementation.
 // ---------------------------------------------------------------------------
 
-/** Finds a host C compiler, or null. Cross compilers cannot run here. */
-function findHostCompiler(): string | null {
-  for (const candidate of ['cc', 'gcc', 'clang']) {
-    try {
-      execFileSync(candidate, ['--version'], { stdio: 'ignore' });
-      return candidate;
-    } catch {
-      /* keep looking */
-    }
-  }
-  return null;
+/**
+ * Host toolchain, resolved by tools/host-cc.mjs.
+ *
+ * Imported at run time rather than reimplemented here. This test used to carry
+ * its own three-line PATH search, which meant it skipped on any machine where
+ * the compiler was not on PATH — MSYS2 on Windows, for instance, keeps its
+ * `bin` off it deliberately. Three copies of "where is gcc" in one repo is the
+ * same drift hazard as three copies of a wire format.
+ */
+interface HostToolchain {
+  id: string;
+  kind: string;
+  version: string;
+  env: NodeJS.ProcessEnv;
+  compile(options: {
+    sources: string[];
+    includeDirs?: string[];
+    output: string;
+    optimize?: string;
+  }): void;
 }
 
-const hostCompiler = findHostCompiler();
+const hostCc = (await import(
+  pathToFileURL(join(ROOT, 'tools/host-cc.mjs')).href
+)) as {
+  findHostToolchain(): HostToolchain | null;
+  exeName(stem: string): string;
+};
+
+const toolchain = hostCc.findHostToolchain();
 
 test(
   'C and TypeScript agree on all 500 vectors',
@@ -166,32 +182,25 @@ test(
     // Skipped loudly rather than silently passing: without a host compiler the
     // C implementation is genuinely unverified, and a green tick here would be
     // a lie about the strongest guarantee in this task.
-    skip: hostCompiler === null ? 'no host C compiler (cross compilers cannot execute here)' : false,
+    skip: toolchain === null ? 'no host C compiler (cross compilers cannot execute here)' : false,
   },
   () => {
     const workDir = mkdtempSync(join(tmpdir(), 'lh-crc-'));
     try {
-      const binary = join(workDir, process.platform === 'win32' ? 'crc16_cli.exe' : 'crc16_cli');
-      execFileSync(
-        hostCompiler!,
-        [
-          '-std=c11',
-          '-Wall',
-          '-Wextra',
-          '-Werror',
-          '-O2',
-          '-I',
-          join(ROOT, 'firmware/common/include'),
+      const binary = join(workDir, hostCc.exeName('crc16_cli'));
+      toolchain!.compile({
+        sources: [
           join(ROOT, 'firmware/common/test/crc16_cli.c'),
           join(ROOT, 'firmware/common/src/crc16.c'),
-          '-o',
-          binary,
         ],
-        { stdio: 'pipe' },
-      );
+        includeDirs: [join(ROOT, 'firmware/common/include')],
+        output: binary,
+        optimize: 'O2',
+      });
 
       const input = vectorFile.vectors.map((v) => v.data_hex).join('\n') + '\n';
-      const output = execFileSync(binary, { input, encoding: 'utf8' });
+      // The toolchain's env: a MinGW binary needs its DLLs on PATH to start.
+      const output = execFileSync(binary, { input, encoding: 'utf8', env: toolchain!.env });
       const fromC = output.trim().split(/\r?\n/);
 
       assert.equal(fromC.length, vectorFile.vectors.length, 'C produced the wrong number of results');

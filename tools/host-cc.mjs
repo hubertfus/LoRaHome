@@ -44,9 +44,30 @@ const WARNING_FLAGS = {
 // GNU-style (gcc, clang, cc)
 // ---------------------------------------------------------------------------
 
+/**
+ * Environment for invoking a compiler given by absolute path.
+ *
+ * MinGW's `gcc.exe` is a driver: it spawns `cc1.exe`, `as.exe` and `ld.exe`,
+ * and those load DLLs from the toolchain's own `bin`. Windows searches the
+ * *initial* executable's directory, not its children's, so `gcc.exe` starts
+ * fine and then `cc1.exe` fails to load — which surfaces as a non-zero exit
+ * with no diagnostic at all. Prepending the directory fixes it, and doing it
+ * here rather than in the developer's PATH keeps the effect scoped to us.
+ */
+function environmentFor(binary) {
+  if (!binary.includes('/') && !binary.includes('\\')) return process.env;
+  const binDir = dirname(binary);
+  const currentPath = process.env['PATH'] ?? process.env['Path'] ?? '';
+  return { ...process.env, PATH: `${binDir}${delimiter}${currentPath}` };
+}
+
 function firstVersionLine(binary) {
   try {
-    const out = execFileSync(binary, ['--version'], { encoding: 'utf8', stdio: 'pipe' });
+    const out = execFileSync(binary, ['--version'], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      env: environmentFor(binary),
+    });
     return out.split('\n')[0]?.trim() ?? binary;
   } catch {
     return null;
@@ -70,7 +91,7 @@ function gnuSanitizerWorks(binary) {
     execFileSync(
       binary,
       ['-fsanitize=address,undefined', '-O0', source, '-o', join(dir, exeName('probe'))],
-      { stdio: 'pipe' },
+      { stdio: 'pipe', env: environmentFor(binary) },
     );
     return true;
   } catch {
@@ -81,14 +102,29 @@ function gnuSanitizerWorks(binary) {
 }
 
 function gnuToolchain(binary, version) {
-  const sanitizes = gnuSanitizerWorks(binary);
+  // Memoised and lazy: the probe costs a compile, and most callers of this
+  // module (the ABI check, the cross-language checks) never ask about
+  // sanitizers at all.
+  let sanitizes;
+  const canSanitize = () => {
+    if (sanitizes === undefined) sanitizes = gnuSanitizerWorks(binary);
+    return sanitizes;
+  };
+
   return {
     id: binary,
     kind: 'gnu',
     version,
-    supportsSanitizer: sanitizes,
-    sanitizers: sanitizes ? 'asan+ubsan' : 'none',
-    env: process.env,
+    get supportsSanitizer() {
+      return canSanitize();
+    },
+    get sanitizers() {
+      return canSanitize() ? 'asan+ubsan' : 'none';
+    },
+    // Handed to callers so a binary built by this toolchain runs with the same
+    // PATH it was compiled under — a MinGW executable needs the toolchain's
+    // libstdc++/libgcc DLLs at run time as well as at link time.
+    env: environmentFor(binary),
     compile({ sources, includeDirs = [], output, optimize = 'O2', sanitize = false, defines = [] }) {
       execFileSync(
         binary,
@@ -102,7 +138,9 @@ function gnuToolchain(binary, version) {
           '-o',
           output,
         ],
-        { stdio: 'pipe', encoding: 'utf8' },
+        // The toolchain's own bin on PATH, or a MinGW driver's cc1.exe cannot
+        // load its DLLs and the build fails without printing anything.
+        { stdio: 'pipe', encoding: 'utf8', env: environmentFor(binary) },
       );
     },
   };
@@ -255,18 +293,85 @@ function msvcToolchain() {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolves the host toolchain, preferring GNU.
+ * Where a GNU compiler lives on Windows when it is not on PATH.
  *
- * GNU first because CI runs on it: a developer disagreeing with CI over a
- * warning is a conversation better had locally than at review time. MSVC is the
- * fallback that makes a Windows machine able to run these tests at all.
+ * MSYS2 deliberately keeps its `bin` directories off the Windows PATH — its
+ * shells add them, `cmd` does not. Discovering them the way
+ * compile-targets.mjs already discovers PlatformIO's cross compilers is better
+ * than asking every developer to edit their environment: it works on a fresh
+ * checkout, it works in CI, and it leaves the machine's PATH alone.
  */
-export function findHostToolchain() {
-  for (const binary of ['cc', 'gcc', 'clang']) {
-    const version = firstVersionLine(binary);
-    if (version !== null) return gnuToolchain(binary, version);
+export function windowsGnuCandidates() {
+  if (process.platform !== 'win32') return [];
+
+  const roots = [
+    'C:\\msys64',
+    'C:\\tools\\msys64',
+    join(process.env['LOCALAPPDATA'] ?? '', 'Programs', 'msys64'),
+  ];
+
+  const paths = [];
+  for (const root of roots) {
+    // ucrt64 first: it links against the modern Universal CRT, which is what
+    // MSVC also targets, so the two agree about the C library underneath.
+    for (const environment of ['ucrt64', 'mingw64', 'clang64']) {
+      paths.push(join(root, environment, 'bin', 'gcc.exe'));
+      paths.push(join(root, environment, 'bin', 'clang.exe'));
+    }
   }
-  return msvcToolchain();
+  // WinLibs and other standalone MinGW-w64 drops.
+  paths.push('C:\\mingw64\\bin\\gcc.exe');
+  return paths;
+}
+
+/**
+ * Every host toolchain on this machine, best first.
+ *
+ * Plural because no single one is best at everything here. On Windows, MinGW
+ * GCC gives the GNU warning set and a real x86-64 ELF-ish ABI check but ships
+ * no libasan; MSVC has ASAN but not the GNU semantics. Returning the list lets
+ * each caller take what it needs rather than forcing one global compromise.
+ *
+ * GNU ranks above MSVC because CI runs on GNU: a developer disagreeing with CI
+ * over a warning is a conversation better had locally than at review time.
+ */
+export function findHostToolchains() {
+  const toolchains = [];
+  const seen = new Set();
+
+  const addGnu = (binary) => {
+    const version = firstVersionLine(binary);
+    if (version === null || seen.has(version)) return;
+    seen.add(version);
+    toolchains.push(gnuToolchain(binary, version));
+  };
+
+  for (const binary of ['cc', 'gcc', 'clang']) addGnu(binary);
+  for (const path of windowsGnuCandidates()) {
+    if (existsSync(path)) addGnu(path);
+  }
+
+  const msvc = msvcToolchain();
+  if (msvc !== null) toolchains.push(msvc);
+
+  return toolchains;
+}
+
+/** The preferred toolchain, or null if the machine has none. */
+export function findHostToolchain() {
+  return findHostToolchains()[0] ?? null;
+}
+
+/**
+ * The best toolchain that can actually build a sanitized binary, or null.
+ *
+ * Separate from the preferred one on purpose. With MinGW installed for the ABI
+ * check, the preferred toolchain has no libasan — and losing the fuzz run's
+ * sanitizer as a side effect of installing a compiler would be a silent
+ * downgrade of the strongest guarantee in the suite.
+ */
+export function findSanitizingToolchain(toolchains = findHostToolchains()) {
+  return toolchains.find((toolchain) => toolchain.supportsSanitizer) ?? null;
 }
 
 /** Platform-appropriate name for a built executable. */

@@ -26,6 +26,7 @@ const STEPS = [
   { id: 'codegen', command: 'pnpm gen:c' },
   { id: 'targets', command: 'node tools/compile-targets.mjs' },
   { id: 'native', command: 'node tools/run-native.mjs' },
+  { id: 'unity', command: 'node tools/run-unit-tests.mjs' },
   { id: 'firmware', command: 'node tools/build-firmware.mjs' },
   { id: 'airtime', command: 'node tools/check-airtime.mjs' },
   { id: 'slip-cross', command: 'node tools/check-slip-cross.mjs' },
