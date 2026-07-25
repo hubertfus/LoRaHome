@@ -24,7 +24,8 @@
  * the whole point.
  */
 import { execFileSync, execSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 
 /** Optimisation level, expressed once and translated per compiler. */
@@ -52,14 +53,41 @@ function firstVersionLine(binary) {
   }
 }
 
+/**
+ * Whether this compiler can actually build a sanitized binary.
+ *
+ * Probed, not assumed. GCC and Clang support `-fsanitize` on the platforms CI
+ * runs on, but MinGW-w64 ships no libasan at all — so a Windows machine that
+ * installs GCC for the x86-64 ABI check would be preferred over MSVC by
+ * findHostToolchain() and then fail every sanitized run at link time. Compiling
+ * a three-line program costs a moment once and turns that into a clean SKIPPED.
+ */
+function gnuSanitizerWorks(binary) {
+  const dir = mkdtempSync(join(tmpdir(), 'lh-san-probe-'));
+  try {
+    const source = join(dir, 'probe.c');
+    writeFileSync(source, 'int main(void) { return 0; }\n');
+    execFileSync(
+      binary,
+      ['-fsanitize=address,undefined', '-O0', source, '-o', join(dir, exeName('probe'))],
+      { stdio: 'pipe' },
+    );
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 function gnuToolchain(binary, version) {
+  const sanitizes = gnuSanitizerWorks(binary);
   return {
     id: binary,
     kind: 'gnu',
     version,
-    /** ASAN and UBSAN both ship with GCC and Clang on the platforms CI runs on. */
-    supportsSanitizer: true,
-    sanitizers: 'asan+ubsan',
+    supportsSanitizer: sanitizes,
+    sanitizers: sanitizes ? 'asan+ubsan' : 'none',
     env: process.env,
     compile({ sources, includeDirs = [], output, optimize = 'O2', sanitize = false, defines = [] }) {
       execFileSync(
