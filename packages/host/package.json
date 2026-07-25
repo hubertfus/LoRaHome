@@ -12,7 +12,8 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/src/index.js",
-    "test": "pnpm run build && node --test dist/test/*.test.js",
+    "test": "pnpm run build && node --test --expose-gc dist/test/*.test.js",
+    "bench": "pnpm run build && node --expose-gc dist/bench/transport.bench.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "clean": "rimraf dist"
@@ -21,7 +22,8 @@
     "@lorahome/components": "workspace:*",
     "@lorahome/protocol": "workspace:*",
     "cbor-x": "^1.6.0",
-    "fastify": "^4.28.0"
+    "fastify": "^4.28.0",
+    "serialport": "^13.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",

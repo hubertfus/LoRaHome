@@ -3,6 +3,18 @@ import { fileURLToPath } from 'node:url';
 import { registerRoutes } from './api/index.js';
 import { openDb } from './db/index.js';
 
+// The link to the Bridge (T1.5). Re-exported so tools/soak and anything else
+// outside this package reach one public surface rather than deep paths.
+export {
+  SerialTransport,
+  openSerialTransport,
+  type ByteStream,
+  type OpenSerialOptions,
+  type SerialTransportOptions,
+  type SerialTransportStats,
+} from './transport/serial.js';
+export { SlipDecoder, slipEncode, slipEncodedMax, SlipState } from './transport/slip.js';
+
 export async function buildServer() {
   const app = Fastify({ logger: true });
   const db = openDb(process.env.LORAHOME_DB_PATH ?? 'lorahome.sqlite');

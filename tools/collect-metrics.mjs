@@ -28,7 +28,9 @@ const STEPS = [
   { id: 'native', command: 'node tools/run-native.mjs' },
   { id: 'firmware', command: 'node tools/build-firmware.mjs' },
   { id: 'airtime', command: 'node tools/check-airtime.mjs' },
+  { id: 'slip-cross', command: 'node tools/check-slip-cross.mjs' },
   { id: 'protocol-bench', command: 'pnpm --filter @lorahome/protocol bench' },
+  { id: 'host-bench', command: 'pnpm --filter @lorahome/host bench' },
 ];
 
 /** Parses `LH_METRIC <name> value=<v> [unit=<u>] [budget=<b>]` and probe lines. */

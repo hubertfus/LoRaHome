@@ -139,6 +139,12 @@ jobs:
       - name: Cross-language airtime (C vs TypeScript)
         run: node tools/check-airtime.mjs
 
+      # The Bridge and the Host each implement SLIP. There is no shared artefact
+      # to generate both from, so the two are held together by 1000 vectors in
+      # both directions instead of by discipline.
+      - name: Cross-language SLIP (C vs TypeScript)
+        run: node tools/check-slip-cross.mjs
+
       # ubuntu-latest ships gcc, so the host x86-64 ABI and the native
       # cross-language CRC comparison both run here — neither can run on a
       # developer machine without a host toolchain.
