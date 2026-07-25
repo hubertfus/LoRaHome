@@ -54,6 +54,17 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'ring',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'ring.c'),
+    measureText: true,
+    textBudget: 1024, // T1.2
+    // Also where the ring's arithmetic invariants are enforced: ring.c asserts
+    // that the size is a power of two AND divides the uint16_t counter range,
+    // which is the difference between a ring that wraps cleanly and one that
+    // corrupts a bufferful every 65536 bytes.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'slip',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'slip.c'),
     measureText: true,

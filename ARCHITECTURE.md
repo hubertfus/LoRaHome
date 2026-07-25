@@ -251,6 +251,25 @@ Consequences the rest of the system has to respect:
 - **Decoding is streaming, one byte at a time.** A UART delivers whatever was in the FIFO, so frames routinely straddle reads.
 - **Structural errors cost one frame, not the session.** An illegal escape pair or a frame larger than the receive buffer is counted, discarded, and the decoder discards further bytes until the next `END`. Arbitrary garbage *within* a frame is not detectable at this layer — a random data byte is indistinguishable from payload — and is caught one layer up by the frame CRC (§3.1).
 - **No allocation.** The frame buffer belongs to the caller and is passed in at init; the decoder never resizes, copies or frees it.
+
+### 7.2. The serial receive path
+
+Between the wire and the SLIP decoder sits a static single-producer/single-consumer ring (`firmware/common/src/ring.c`, 2 kB), drained by the Bridge's `SerialLink`. The split exists because of one number: at 921600 baud a byte arrives every **10.9 µs**. Anything doing protocol work on the receive path — SLIP state, CRC, a log line — either loses bytes or trips the watchdog.
+
+```
+UART FIFO → driver ISR → reader task → lh_ring_t → main loop → SLIP → CRC → LoRa
+            └──── moves bytes only ────┘          └──── all protocol work ────┘
+```
+
+Three properties are load-bearing:
+
+- **Free-running indices.** `head` and `tail` count bytes and are masked only when indexing storage, so occupancy is `head - tail` in modular arithmetic, "full" and "empty" are distinguishable, and each index has exactly one writer. This is why the ring size must both be a power of two *and* divide the 65536-byte `uint16_t` range — otherwise the counter rollover shifts the masked index and corrupts a bufferful roughly every 0.7 s at full rate. Both conditions are held by `_Static_assert`.
+- **Drop-newest on overrun.** Losing the incoming byte damages only the frame currently arriving, and SLIP resynchronises at the next delimiter. Dropping the oldest would additionally corrupt a frame that had already arrived intact.
+- **`stat_hwm` is a warning light, not a statistic.** Peak occupancy above ~60% means the consumer is already too slow, and the first stall — an NVS write, a 390 ms LoRa transmit — will cost data. It is readable before that happens.
+
+Two buffers sit in series (the IDF driver's and ours) and that is deliberate: the driver's absorbs interrupt-to-schedule latency, ours absorbs the far longer consumer-side stalls.
+
+Allocation after `setup()` is zero. The reader task uses a static stack and TCB via `xTaskCreateStatic`; the ring is a member. `uart_driver_install()` allocates once during init, which §0.6 permits — the budget is zero `malloc` *after* `app_main`.
 2. **Duty cycle tracker**: ETSI EN 300 220 mandates a hard 1% transmit-time limit on 868 MHz (per channel, within a 1-hour window). The Bridge tracks actual airtime (based on frame size and SF/BW) and **refuses to transmit** if it would exceed this limit — regardless of whether the Host (Duty Cycle Guard) already checked it earlier. Two independent layers of defense.
 3. **Retransmissions**: for frames with the `ACK_REQ` flag, the Bridge manages the timeout and resend (up to a configured retry limit) before reporting an error to the Host.
 4. **Time windows**: a simple TDMA-lite scheme — the Bridge assigns time slots to nodes to minimize collisions in denser P2P networks, without needing full mesh routing.

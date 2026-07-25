@@ -96,17 +96,21 @@ jobs:
         run: pnpm gen:c:check
 
       # Cache the ESP cross toolchains — they are ~200 MB and change rarely.
+      # Key bumped to v2: the espressif32 platform and RadioLib were added for
+      # the firmware link step below, so a v1 cache would restore a tree
+      # missing both and the install step would fetch them on every run.
       - name: Cache PlatformIO toolchains
         uses: actions/cache@v4
         with:
           path: ~/.platformio
-          key: pio-toolchains-xtensa-s3-riscv32-v1
+          key: pio-toolchains-xtensa-s3-riscv32-esp32-v2
 
       - name: Install ESP toolchains
         run: |
           pipx install platformio
           pio pkg install -g -t toolchain-xtensa-esp32s3
           pio pkg install -g -t toolchain-riscv32-esp
+          pio pkg install -g -p espressif32
 
       # Compiles the generated header on three ABIs. The _Static_asserts are
       # inert text until a compiler reads them; this is what makes them a gate.
@@ -120,6 +124,14 @@ jobs:
       # keeps going when a step fails — it is gathering numbers, not gating.
       - name: Native firmware self-tests (incl. sanitized fuzz run)
         run: node tools/run-native.mjs
+
+      # Compiling translation units one at a time proves the C is sound; it does
+      # not prove the images link, and it says nothing about the two §0.6
+      # budgets that are properties of the whole image (static RAM, flash).
+      # Only the esp32dev environments — firmware/node also declares a `native`
+      # env for host unit tests, which is not what this measures.
+      - name: Link firmware images and check size budgets
+        run: node tools/build-firmware.mjs
 
       # ubuntu-latest ships gcc, so the host x86-64 ABI and the native
       # cross-language CRC comparison both run here — neither can run on a

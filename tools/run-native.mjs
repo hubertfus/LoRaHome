@@ -36,6 +36,10 @@ const HARNESSES = [
     id: 'slip',
     sources: [join(COMMON, 'test', 'slip_selftest.c'), join(COMMON, 'src', 'slip.c')],
   },
+  {
+    id: 'ring',
+    sources: [join(COMMON, 'test', 'ring_selftest.c'), join(COMMON, 'src', 'ring.c')],
+  },
 ];
 
 const toolchain = findHostToolchain();

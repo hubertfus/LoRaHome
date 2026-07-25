@@ -92,6 +92,17 @@ const HIGHER_IS_BETTER = [
   // Compiling fewer ABIs than required is the regression, so its budget is a
   // floor: 2 of 3 targets must fail the gate, not sail through it.
   'compiled_clean',
+  // Counts of verification *performed* — fuzz iterations, round trips, bytes
+  // pushed through a wraparound test. Etap 1 introduced these and they broke
+  // the default assumption in both directions: a budget read as a ceiling made
+  // "we checked more than asked" a breach, while quietly dropping the fuzz run
+  // from 1,000,000 iterations to 1,000 would have sailed through as an
+  // improvement. Doing less checking is the regression.
+  'iterations',
+  'round_trip',
+  'wraparound_bytes',
+  'harnesses_run',
+  'sanitized_runs',
 ];
 
 function isHigherBetter(name: string): boolean {

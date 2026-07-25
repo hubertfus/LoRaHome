@@ -5,11 +5,13 @@
 #include "lorahome/lora_transport.h"
 #include "lorahome/protocol.h"
 #include "lorahome/slip.h"
+#include "serial_link.h"
 
 using namespace lorahome;
 
 static SX1262 g_radio = new Module(/*cs=*/18, /*irq=*/26, /*rst=*/23, /*gpio=*/33);
 static LoraTransport g_transport(&g_radio);
+static SerialLink g_serial;
 
 // ETSI EN 300 220: 1% duty cycle over a rolling 1h window on 868MHz.
 static DutyCycleTracker g_dutyCycle(0.01f, 60UL * 60UL * 1000UL);
@@ -32,7 +34,7 @@ static void sendToHost(const uint8_t* frame, size_t len) {
   const uint16_t encodedLen = lh_slip_encode(frame, static_cast<uint16_t>(len), g_slipEncodeBuf,
                                              static_cast<uint16_t>(sizeof(g_slipEncodeBuf)));
   if (encodedLen == 0) return;  // no room for the worst case — drop rather than corrupt
-  Serial.write(g_slipEncodeBuf, encodedLen);
+  g_serial.write(g_slipEncodeBuf, encodedLen);
 }
 
 static void onLoraFrameReceived(const uint8_t* data, size_t len, uint16_t srcId) {
@@ -66,7 +68,7 @@ static void handleFrameFromHost(const uint8_t* frame, size_t len) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  g_serial.begin();
   g_transport.begin();
   g_transport.onReceive(onLoraFrameReceived);
   lh_slip_init(&g_serialDecoder, g_serialRxBuf, sizeof(g_serialRxBuf));
@@ -75,13 +77,22 @@ void setup() {
 void loop() {
   g_transport.poll();
 
-  while (Serial.available() > 0) {
-    const uint8_t byte = static_cast<uint8_t>(Serial.read());
-    // The frame stays valid only until the next feed, so it is handled here and
-    // now. LH_SLIP_ERROR needs no branch: the decoder has already counted the
-    // damaged frame and resynchronised itself.
-    if (lh_slip_feed(&g_serialDecoder, byte) == LH_SLIP_FRAME_READY) {
-      handleFrameFromHost(g_serialDecoder.buf, g_serialDecoder.len);
+  // Drained in blocks rather than a byte at a time: the reader task is filling
+  // the ring concurrently, and one bulk pop per pass costs one fence instead of
+  // one per byte. SLIP decoding stays on this side of the ring — that is the
+  // whole point of the split (risk R1.2).
+  static uint8_t block[128];
+  for (;;) {
+    const uint16_t received = g_serial.read(block, sizeof(block));
+    if (received == 0) break;
+
+    for (uint16_t i = 0; i < received; i++) {
+      // The frame stays valid only until the next feed, so it is handled here
+      // and now. LH_SLIP_ERROR needs no branch: the decoder has already counted
+      // the damaged frame and resynchronised itself.
+      if (lh_slip_feed(&g_serialDecoder, block[i]) == LH_SLIP_FRAME_READY) {
+        handleFrameFromHost(g_serialDecoder.buf, g_serialDecoder.len);
+      }
     }
   }
 }
