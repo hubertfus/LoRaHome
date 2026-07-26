@@ -75,6 +75,17 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'dedup',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'dedup.c'),
+    measureText: true,
+    textBudget: 512, // T2.1
+    // Carries the _Static_assert on sizeof(lh_dedup_t). The peer record holds an
+    // int64_t next to a uint16_t, so its size is entirely a question of the
+    // target's alignment rules — exactly the drift the three-ABI sweep exists
+    // to catch, and not something the host build can answer on its own.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'slip',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'slip.c'),
     measureText: true,

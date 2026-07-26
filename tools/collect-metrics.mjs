@@ -30,6 +30,7 @@ const STEPS = [
   { id: 'firmware', command: 'node tools/build-firmware.mjs' },
   { id: 'airtime', command: 'node tools/check-airtime.mjs' },
   { id: 'slip-cross', command: 'node tools/check-slip-cross.mjs' },
+  { id: 'dedup-cross', command: 'node tools/check-dedup-cross.mjs' },
   { id: 'bridge-stat', command: 'node tools/check-bridge-stat.mjs' },
   { id: 'protocol-bench', command: 'pnpm --filter @lorahome/protocol bench' },
   { id: 'host-bench', command: 'pnpm --filter @lorahome/host bench' },

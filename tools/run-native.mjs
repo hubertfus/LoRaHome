@@ -46,6 +46,10 @@ const HARNESSES = [
     sources: [join(COMMON, 'test', 'ring_selftest.c'), join(COMMON, 'src', 'ring.c')],
   },
   {
+    id: 'dedup',
+    sources: [join(COMMON, 'test', 'dedup_selftest.c'), join(COMMON, 'src', 'dedup.c')],
+  },
+  {
     id: 'bridge',
     sources: [
       join(COMMON, 'test', 'bridge_selftest.c'),
