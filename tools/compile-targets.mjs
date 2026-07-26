@@ -75,6 +75,16 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'frag',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'frag.c'),
+    measureText: true,
+    textBudget: 1024, // T2.3
+    // Carries the _Static_assert on sizeof(lh_reassembler_t) — 1664 B of the
+    // 2304 B reliability budget, and the one struct big enough that a target's
+    // alignment rules could push it over on their own.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'protocol',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'protocol.c'),
     measureText: true,

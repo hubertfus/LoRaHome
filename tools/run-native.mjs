@@ -58,6 +58,14 @@ const HARNESSES = [
     sources: [join(COMMON, 'test', 'dedup_selftest.c'), join(COMMON, 'src', 'dedup.c')],
   },
   {
+    id: 'frag',
+    sources: [
+      join(COMMON, 'test', 'frag_selftest.c'),
+      join(COMMON, 'src', 'frag.c'),
+      join(COMMON, 'src', 'crc16.c'),
+    ],
+  },
+  {
     id: 'bridge',
     sources: [
       join(COMMON, 'test', 'bridge_selftest.c'),
