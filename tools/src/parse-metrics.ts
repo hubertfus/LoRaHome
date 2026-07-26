@@ -121,6 +121,10 @@ const HIGHER_IS_BETTER = [
   // of R2.2 waiting for a power cut.
   'delivery',
   'jitter_stddev',
+  // Identical traces out of a fixed seed (T2.5). 100 of 100 is the pass; the
+  // budget is a floor, and a simulator that started drifting would otherwise
+  // report the drift as an improvement.
+  'determinism',
 ];
 
 function isHigherBetter(name: string): boolean {
