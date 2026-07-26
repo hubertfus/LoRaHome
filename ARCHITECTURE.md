@@ -349,3 +349,117 @@ The Bridge **does not interpret** the CBOR payload beyond the header (needed for
 On boot (or on `CAPABILITY_REQ`), the Node scans its declared buses (currently: I2C) and returns a `CAPABILITY_RSP` listing detected addresses. The Host correlates addresses against the manifest database (`packages/components`) and presents in the UI: *"Detected a device at 0x76, matching the `bme680` manifest — add it as a component?"*
 
 This inverts the typical ESPHome flow (declare a sensor in YAML, hoping it's wired correctly) into: **plug in the hardware, let the system tell you what it sees.**
+
+---
+
+## 9. Reliability layer (Etap 2)
+
+Radio loses packets. Always. The transport in §7 moves a frame from one antenna
+to another when conditions allow; this section is what makes a *system* out of
+that — designed for a world where 10% of frames simply do not arrive, and where
+the ones that do may arrive twice, late, or in the wrong order.
+
+Three components, one static context, one budget:
+
+```c
+typedef struct {
+    lh_dedup_t        dedup;   /*  152 B */
+    lh_reassembler_t  reasm;   /* 1640 B */
+    lh_arq_t          arq;     /*  320 B */
+} lh_reliability_ctx_t;        /* 2112 B against a 2304 B budget */
+```
+
+One instance per device, in `.bss`, asserted at compile time on all three ABIs.
+Nothing here allocates, ever — the reason a node that has been up for three
+weeks behaves like one that booted this morning.
+
+### 9.1 Duplicate suppression
+
+Per-sender window of 32 sequence numbers, held as a 32-bit bitmap: bit *n* means
+"`last_seq - n` has been seen". Check-and-mark is a shift, a test and an or —
+O(1), and 4 bytes of history per peer where a table of recent sequence numbers
+would have cost 32. Eight peers are tracked; the ninth evicts the one heard from
+longest ago, and the eviction is counted, because past that point the guarantee
+is a rotating cache rather than a promise.
+
+Sequence numbers are 8-bit and wrap every 256 frames. Every comparison goes
+through `(int8_t)(a - b)` — modular distance, never `a > b`. The alternative
+works perfectly for 256 frames and then rejects everything as a duplicate, in
+the field, after the installer has gone home (R2.1).
+
+The invariant this exists for is measured, not assumed: the chaos suite runs
+100k frames through five link profiles and requires `chaos.double_processed == 0`.
+
+### 9.2 Fragmentation
+
+Configs run past the 220 B a frame carries, so they are split into up to eight
+200 B fragments — 1600 B maximum, refused on the Host before anything is
+transmitted rather than discovered by a device on a roof.
+
+Each fragment carries an 8-byte header, big-endian like every other multi-byte
+field in this protocol:
+
+| Offset | Field | Purpose |
+|---|---|---|
+| 0–1 | `cfg_id` | transaction id |
+| 2 | `frag_index` | 0 .. total-1 |
+| 3 | `frag_total` | fragments in this transaction |
+| 4–5 | `total_len` | assembled length, repeated in every fragment |
+| 6–7 | `crc_total` | CRC over the **assembled config** |
+
+`crc_total` is not redundant with the per-frame CRC. The frame CRC protects
+transport, and it cannot see the failure that matters here: fragments from two
+different transactions, each transmitted perfectly, assembled into one config
+that is internally consistent and wrong. Two independent defences — `cfg_id`
+(with the length and fragment count) checked on every fragment, and `crc_total`
+verified after assembly (R2.3).
+
+An incomplete transaction is expired after 30 s against a real clock, never a
+loop counter, so one lost fragment costs half a minute rather than the device's
+ability to be configured at all (R2.4).
+
+### 9.3 Stop-and-wait ARQ
+
+```
+IDLE ──send()──▶ WAIT_ACK ──ack──▶ DONE ──send()──▶ WAIT_ACK
+                    │  ▲
+       timeout,     │  │ retransmit (backoff + jitter)
+       retry < 5 ───┘──┘
+                    │
+       timeout,     └──▶ FAILED ──send()──▶ WAIT_ACK
+       retry == 5
+```
+
+Stop-and-wait rather than a sliding window, deliberately: one frame at SF9 is
+390 ms on air and the duty cycle permits roughly one every two minutes, so there
+is never a second frame in flight to manage.
+
+`timeout(n) = 2000 ms × 2ⁿ + rand(0, 500 ms)`. The jitter is not cosmetic. Without
+it, every node that lost its link at the same moment retransmits at the same
+moment, collides, backs off in lockstep and collides again — a retransmission
+storm that sustains itself after the cause is gone (R2.2). The distribution is
+measured in CI (σ = 146.7 ms against a 100 ms floor), because "we add jitter" is
+an intention and a standard deviation is a fact.
+
+Two rules that are easy to get wrong and expensive to get wrong:
+
+- **A stale ACK acknowledges nothing.** A duplicate ACK arriving while the *next*
+  transfer is in flight must not complete it — otherwise a config is marked
+  delivered on the strength of an ACK for the previous one, and nobody ever
+  retries it.
+- **A duty-cycle refusal defers, and does not consume a retry.** Five retries
+  spent without a frame reaching the antenna would report a config as
+  undeliverable by a radio that was never used (R2.5).
+
+### 9.4 How this is tested
+
+| Layer | Where | What it proves |
+|---|---|---|
+| Property, at volume | `firmware/common/test/*_selftest.c` | 100k dedup events against an identity oracle; 1000 shuffled reassemblies; delivery across four loss profiles |
+| On target | `firmware/node/test/test_{dedup,frag,arq}` | struct sizes and modular arithmetic on the ABI that ships |
+| Cross-language | `tools/check-{dedup,frag,arq}-cross.mjs` | C and TypeScript reach identical verdicts, frame for frame |
+| End to end | `packages/host/src/reliability/chaos.ts` | everything above, over a seeded link that drops, delays, reorders and corrupts |
+
+Every impairment comes from a seeded generator, so a failure is a `seed=0x8f2a`
+that reproduces on a laptop rather than a story about a field test. `Math.random()`
+does not appear in any reliability test (R2.6).
