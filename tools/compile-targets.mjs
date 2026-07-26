@@ -142,6 +142,16 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'gpio_digital',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'gpio_digital.c'),
+    measureText: true,
+    textBudget: 1024, // T3.4
+    // Carries the assertion that the instance table cannot exceed the component
+    // limit — one pin per component, so the driver's static RAM is bounded by
+    // the same number the rest of the node is budgeted against.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'bme680',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'bme680.c'),
     measureText: true,

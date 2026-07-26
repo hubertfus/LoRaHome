@@ -81,6 +81,14 @@ const HARNESSES = [
     sources: [join(COMMON, 'test', 'i2c_scan_selftest.c'), join(COMMON, 'src', 'i2c_scan.c')],
   },
   {
+    id: 'gpio_digital',
+    sources: [
+      join(COMMON, 'test', 'gpio_digital_selftest.c'),
+      join(COMMON, 'src', 'gpio_digital.c'),
+      join(COMMON, 'src', 'driver.c'),
+    ],
+  },
+  {
     id: 'bme680',
     sources: [
       join(COMMON, 'test', 'bme680_selftest.c'),

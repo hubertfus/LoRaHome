@@ -582,3 +582,57 @@ sample rather than clicking a relay at 3am on a number nobody checked.
 | `sizeof(lh_driver_ctx_t)` | ≤ 64 B | `_Static_assert` in `driver.c`, compiled on all three ABIs |
 | `mem.registry.static` | ≤ 512 B | same assertion, stated as 8 × the context |
 | Per-instance scratch | 32 B, inside the context | `LH_DRIVER_SCRATCH_SIZE`; drivers own no heap (R3.5) |
+
+### 10.6 The drivers that ship
+
+| Driver | `type_id` | Channels | Warmup | Notes |
+|---|---|---|---|---|
+| `bme680` | 16 | temperature, humidity, pressure, gas | 200 ms | forced mode; two instances maximum |
+| `gpio_digital` | 17 | level, transitions | 0 | debounced; `bus_addr` is the pin number |
+
+Type ids are permanent. A retired one stays `RESERVED` rather than being reused,
+because an id that comes back means a host rendering one sensor's readings under
+another's name (R3.4).
+
+**BME680.** Forced mode, not continuous: one measurement, back to sleep, under a
+microamp in between. Two instances is the chip's limit rather than a budget —
+its address is selected by a single pin, so one bus carries 0x76 and 0x77 and
+nothing else.
+
+Its compensation is Bosch's integer algorithm with two deliberate divergences,
+both found by sweeping each channel across its whole raw domain rather than
+across a plausible window. In int32 the reference overflows twice, and neither
+overflow crashes or produces an obviously bad number:
+
+- humidity wraps from a clamped 100% to exactly **0%** at a raw count of 54032 —
+  unreachable for a healthy sensor, immediate for a corrupted I2C read, and
+  "bone dry" is a number a rule acts on;
+- pressure steps **1954 Pa upwards** in a curve that only falls, near 106 kPa,
+  where the 3125 multiply passes 2^31; widening that alone moved the failure to
+  the cube term in the correction, worth another 2 kPa at the top of the range.
+
+Both are computed in 64 bits here. The result agrees with the reference to
+within a pascal everywhere the reference is valid, and keeps working where it
+wraps, at the cost of a few libgcc helper calls every three seconds.
+
+The gas channel is the one that lies. The chip reports whether the reading is
+valid and whether the heater reached its setpoint; without both, the sample is
+delivered at `quality = 0` rather than dropped — visible in telemetry, refused
+by the rule engine (R3.6).
+
+**GPIO.** A contact does not close once. It closes, bounces open, closes again —
+a dozen transitions inside a few milliseconds, all electrically real and none of
+them meaning anything. A level is accepted only after every sample since the
+change has agreed for the configured window; each reversal restarts it, so
+twenty bounces in five milliseconds produce exactly one event.
+
+The window is defined over **observations**, not wall time: the driver can only
+know a level has held for 50 ms by having seen it at two moments 50 ms apart. A
+poll that never happens therefore cannot accept a transition, and behaviour is
+the same whether the scheduler runs every 2 ms or every 10 ms. Measured, a 50 ms
+window lands at 51 ms and a 1000 ms window at 1001 ms — the extra millisecond is
+the poll interval, not drift.
+
+The starting level is adopted at bind without counting as a transition.
+Otherwise every reboot reports the door as having just opened, and reboots are
+when nobody is watching.
