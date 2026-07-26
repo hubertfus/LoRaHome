@@ -146,6 +146,16 @@ function gnuToolchain(binary, version) {
           ...sources,
           '-o',
           output,
+          // libm, after the objects because ld resolves left to right.
+          //
+          // airtime.c calls fmaxf and ceilf. On glibc those live in libm and
+          // linking without -lm fails with "undefined reference to `fmaxf'";
+          // MSYS2's UCRT and newlib fold them into libc, so the same command
+          // links on Windows and on both cross targets and only breaks on the
+          // runner. Same shape as the POSIX feature macro two commits ago, and
+          // harmless where libm is empty — the linker drops what it does not
+          // need.
+          '-lm',
         ],
         // The toolchain's own bin on PATH, or a MinGW driver's cc1.exe cannot
         // load its DLLs and the build fails without printing anything.
