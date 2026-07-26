@@ -4,6 +4,7 @@ import {
   evaluateGate,
   formatGateResult,
   hasRegressionJustification,
+  isEnvironmentSensitive,
   parseCommitMetricsBlock,
   parseMetrics,
   toBaseline,
@@ -126,6 +127,26 @@ test('a changed environment suppresses size/timing regressions but not budgets',
   assert.equal(evaluateGate(overBudget, baseline, { environmentChanged: true }).passed, false);
 });
 
+test('a changed environment suppresses timing regressions named anything', () => {
+  // The failure this rule was rewritten for: chaos.suite.runtime.s matches none
+  // of the size/bench/mem prefixes, so a laptop's 2.2 s was compared against a
+  // shared CI runner's 3.2 s and called a 45% regression in a suite the commit
+  // had not touched. What decides comparability is the unit, not the name.
+  const metrics = parseMetrics('LH_METRIC chaos.suite.runtime.s value=3.2 unit=s');
+  const baseline = { 'chaos.suite.runtime.s': 2.2 };
+
+  assert.equal(evaluateGate(metrics, baseline).passed, false, 'same env: still a regression');
+  assert.equal(
+    evaluateGate(metrics, baseline, { environmentChanged: true }).passed,
+    true,
+    'different machine: a wall-clock duration is not comparable',
+  );
+
+  // And the budget still bites, whatever the machine.
+  const overBudget = parseMetrics('LH_METRIC chaos.suite.runtime.s value=3.2 unit=s budget=3');
+  assert.equal(evaluateGate(overBudget, baseline, { environmentChanged: true }).passed, false);
+});
+
 test('a changed environment still gates non-environmental metrics', () => {
   // Test counts and assertion counts do not depend on the compiler, so a
   // toolchain change is no excuse for them moving.
@@ -135,6 +156,29 @@ test('a changed environment still gates non-environmental metrics', () => {
     { environmentChanged: true },
   );
   assert.equal(result.regressions.length, 1, 'assertion count dropping is still a regression');
+
+  // Counts and percentages stay comparable across machines — which is where
+  // most real regressions show up, so the exemption must not swallow them.
+  for (const line of [
+    'LH_METRIC test.cross_lang_cbor value=100 unit=count',
+    'LH_METRIC metric.interval_accuracy value=40 unit=pct',
+    'LH_METRIC targets.compiled_clean value=1 unit=targets',
+  ]) {
+    const metric = parseMetrics(line)[0]!;
+    assert.equal(
+      isEnvironmentSensitive(metric.name, metric.unit),
+      false,
+      `${metric.unit} is deterministic across machines`,
+    );
+  }
+
+  for (const unit of ['s', 'ms', 'us', 'ns', 'B', 'kB', 'MB', 'kB/s', 'MB/s']) {
+    assert.equal(
+      isEnvironmentSensitive('some.metric', unit),
+      true,
+      `${unit} is a property of the machine too`,
+    );
+  }
 });
 
 test('high-variance metrics are trended but never fatal', () => {

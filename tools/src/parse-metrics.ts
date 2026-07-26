@@ -270,9 +270,40 @@ export interface GateOptions {
   environmentChanged?: boolean;
 }
 
-/** Metrics whose value depends on the compiler or machine, not only the code. */
-export function isEnvironmentSensitive(name: string): boolean {
-  return /^(size|bench|mem)\./.test(name);
+/**
+ * Units that make a metric a property of the machine as much as of the code.
+ *
+ * Durations and byte counts. A metric measured in `count`, `pct` or `targets`
+ * is deterministic — the same code produces the same number on any machine —
+ * and stays regression-checked across environments, which is where most real
+ * regressions show up anyway.
+ */
+const ENVIRONMENT_SENSITIVE_UNITS = new Set([
+  's', 'ms', 'us', 'ns',
+  'B', 'kB', 'MB',
+  'kB/s', 'MB/s',
+]);
+
+/**
+ * Metrics whose value depends on the compiler or machine, not only the code.
+ *
+ * The name prefixes came first and were not enough. `chaos.suite.runtime.s` is
+ * a wall-clock duration that matches none of them, so a laptop's 2.2 s was
+ * compared against a shared CI runner's 3.2 s and reported as a 45% regression
+ * in a suite the commit had not touched — the same failure the SLIP budget hit
+ * in fe7e19a, where a threshold ended up policing the runner's CPU.
+ *
+ * Naming is the wrong thing to key on. What decides whether a number is
+ * comparable across machines is what it measures, and the unit already says so.
+ * The prefixes are kept because a few metrics carry no unit at all.
+ *
+ * This only ever applies when the environment actually differs, and budgets
+ * remain fully enforced in every case: they are absolute contracts, and 2.2 s
+ * or 3.2 s both have to fit under the limit.
+ */
+export function isEnvironmentSensitive(name: string, unit?: string): boolean {
+  if (/^(size|bench|mem)\./.test(name)) return true;
+  return unit !== undefined && ENVIRONMENT_SENSITIVE_UNITS.has(unit);
 }
 
 /**
@@ -314,7 +345,9 @@ export function evaluateGate(
 
     // Different compiler or machine: the budget above still bound, but a
     // percentage change against an incomparable baseline says nothing.
-    if (options.environmentChanged === true && isEnvironmentSensitive(metric.name)) continue;
+    if (options.environmentChanged === true && isEnvironmentSensitive(metric.name, metric.unit)) {
+      continue;
+    }
 
     // A zero baseline has no meaningful percentage change; any movement away
     // from zero is reported as a regression only if it is in the bad direction.
