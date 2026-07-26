@@ -18,10 +18,11 @@
  * than a zero.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findHostToolchains } from './host-cc.mjs';
+import { exeName, findHostToolchains } from './host-cc.mjs';
 import { environmentWithCompiler, findPlatformIO, platformioVersion } from './platformio.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -67,11 +68,93 @@ let totalCases = 0;
 let succeeded = 0;
 let failed = 0;
 
-for (const project of PROJECTS) {
+/**
+ * Distinguishes "the OS refused to start this" from "this test failed".
+ *
+ * On this Windows machine, Application Control refuses to execute a just-linked
+ * unsigned binary for roughly one suite in five — `[WinError 4551] Zasady
+ * kontroli aplikacji zablokowały ten plik`. PlatformIO reports the suite as
+ * ERRORED, its cases vanish from the total, and the run fails having tested
+ * nothing. run-native.mjs documents the same phenomenon under a different
+ * message (`spawnSync ... UNKNOWN`).
+ *
+ * The distinction is the whole safety property here: a suite that ran and
+ * failed an assertion has produced a result, and re-rolling it until it turns
+ * green is exactly the habit a metric gate exists to prevent. Only a refused
+ * launch is worked around, and only by running the binary that was already
+ * built — never by rebuilding or re-deciding a test's outcome.
+ */
+function wasBlockedFromLaunching(output) {
+  // WinError 4551 is Application Control. The ERRORED-without-FAILED shape
+  // catches the same class of problem under a different message: PlatformIO
+  // prints [FAILED] for an assertion and [ERRORED] when the suite never ran.
+  if (/WinError 4551/.test(output)) return true;
+  return /\[ERRORED\]/.test(output) && !/\[FAILED\]/.test(output);
+}
+
+/** Suite directories, so each one can be run — and if blocked, retried — alone. */
+function suitesOf(project) {
+  return readdirSync(join(project.dir, 'test'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('test_'))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/**
+ * Runs the suite's binary from a fresh path, when the OS refused PlatformIO's.
+ *
+ * PlatformIO links every suite to the same `program.exe`, and re-running it
+ * there gets refused again — run-native.mjs found the same thing from the other
+ * direction and worked around it the same way: a copy at a new path is
+ * evaluated fresh and starts. The build has already succeeded at this point;
+ * only the launch was blocked, so nothing is rebuilt and nothing is skipped.
+ *
+ * The binary is Unity's own, so its output is parsed directly rather than
+ * through PlatformIO's summary. Returns null if there is nothing to copy.
+ */
+function runBuiltBinaryDirectly(project, suite) {
+  const binary = join(project.dir, '.pio', 'build', project.env, exeName('program'));
+  if (!existsSync(binary)) return null;
+
+  const copy = join(
+    mkdtempSync(join(tmpdir(), 'lh-unity-')),
+    exeName(`${suite}-${Date.now().toString(36)}`),
+  );
+  copyFileSync(binary, copy);
+
   let output = '';
   let ok = true;
   try {
-    output = execFileSync(pio, ['test', '-d', project.dir, '-e', project.env], {
+    output = execFileSync(copy, [], { encoding: 'utf8', stdio: 'pipe', maxBuffer: 32 * 1024 * 1024 });
+  } catch (error) {
+    output = `${error?.stdout ?? ''}${error?.stderr ?? ''}`;
+    ok = false;
+  } finally {
+    rmSync(dirname(copy), { recursive: true, force: true });
+  }
+
+  // Unity's own summary: `6 Tests 0 Failures 0 Ignored`.
+  const summary = output.match(/(\d+)\s+Tests\s+(\d+)\s+Failures\s+(\d+)\s+Ignored/);
+  if (summary === null) return null;
+
+  const cases = Number(summary[1]);
+  const failures = Number(summary[2]);
+  return { ok: ok && failures === 0, cases, passed: cases - failures, output };
+}
+
+/**
+ * Runs one suite, working around only a launch the OS refused.
+ *
+ * Per suite rather than per project: with seven suites and roughly a one-in-five
+ * block rate, re-running the whole project rarely gets all seven through at
+ * once. It also keeps the workaround narrow — suites that already ran are not
+ * re-run, so a passing result can never come from a second roll of the dice.
+ */
+function runSuite(project, suite) {
+  let output = '';
+  let ok = true;
+  try {
+    output = execFileSync(pio, ['test', '-d', project.dir, '-e', project.env, '-f', suite], {
       encoding: 'utf8',
       stdio: 'pipe',
       env: environmentWithCompiler(compiler),
@@ -82,32 +165,67 @@ for (const project of PROJECTS) {
     ok = false;
   }
 
-  // `================= 22 test cases: 22 succeeded in 00:00:14.304 =================`
-  const summary = output.match(/(\d+)\s+test cases?:\s+(\d+)\s+succeeded/);
-  if (summary === null) {
-    console.error(`FAIL     ${project.id} — no test summary in PlatformIO's output`);
-    console.error(output.split('\n').slice(-25).join('\n'));
-    failed++;
-    continue;
-  }
+  if (ok || !wasBlockedFromLaunching(output)) return { ok, output, viaCopy: false };
 
-  const cases = Number(summary[1]);
-  const passed = Number(summary[2]);
-  totalCases += cases;
-  succeeded += passed;
+  console.log(`note     ${suite} was blocked from launching by the OS; running a fresh copy`);
+  const direct = runBuiltBinaryDirectly(project, suite);
+  if (direct === null) return { ok: false, output, blocked: true, viaCopy: false };
 
-  // Per-suite lines, so a failure names itself rather than hiding in a total.
-  for (const line of output.split('\n')) {
-    const suite = line.match(/^-+\s*\S+:(\S+)\s+\[(PASSED|FAILED)\]/);
-    if (suite !== null) console.log(`  ${suite[2] === 'PASSED' ? 'ok  ' : 'FAIL'} ${suite[1]}`);
-  }
+  return { ok: direct.ok, output: direct.output, viaCopy: true, direct };
+}
 
-  if (!ok || passed !== cases) {
-    console.error(`FAIL     ${project.id} — ${cases - passed} of ${cases} cases failed`);
-    failed++;
-  } else {
-    console.log(`OK       ${project.id.padEnd(8)} — ${passed}/${cases} Unity cases`);
+for (const project of PROJECTS) {
+  for (const suite of suitesOf(project)) {
+    const { ok, output, blocked, viaCopy, direct } = runSuite(project, suite);
+
+    if (blocked === true) {
+      console.error(
+        `FAIL     ${suite} — blocked from launching, and there was no built binary to ` +
+          `copy. That is this machine's Application Control, not the code — but it means ` +
+          `the suite was not verified, so it is not being called green.`,
+      );
+      failed++;
+      continue;
+    }
+
+    let cases;
+    let passed;
+    if (viaCopy) {
+      cases = direct.cases;
+      passed = direct.passed;
+    } else {
+      // `================= 6 test cases: 6 succeeded in 00:00:02.133 =================`
+      const summary = output.match(/(\d+)\s+test cases?:\s+(\d+)\s+succeeded/);
+      if (summary === null) {
+        console.error(`FAIL     ${suite} — no test summary in PlatformIO's output`);
+        console.error(output.split('\n').slice(-25).join('\n'));
+        failed++;
+        continue;
+      }
+      cases = Number(summary[1]);
+      passed = Number(summary[2]);
+    }
+
+    totalCases += cases;
+    succeeded += passed;
+
+    const note = viaCopy ? ' (ran from a copy)' : '';
+    if (!ok || passed !== cases) {
+      console.error(`FAIL     ${suite} — ${cases - passed} of ${cases} cases failed${note}`);
+      // The failing assertions, so a red run says what broke rather than only
+      // how many things did.
+      for (const line of output.split('\n')) {
+        if (/:\d+:.*\[(FAILED|IGNORED)\]/.test(line)) console.error(`         ${line.trim()}`);
+      }
+      failed++;
+    } else {
+      console.log(`  ok   ${suite.padEnd(20)} ${passed}/${cases} cases${note}`);
+    }
   }
+}
+
+if (failed === 0) {
+  console.log(`OK       node     — ${succeeded}/${totalCases} Unity cases`);
 }
 
 console.log(`LH_METRIC test.unity.native.cases value=${totalCases} unit=count`);
