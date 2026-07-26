@@ -14,6 +14,7 @@
     "start": "node dist/src/index.js",
     "test": "pnpm run build && node --test --expose-gc dist/test/*.test.js",
     "bench": "pnpm run build && node --expose-gc dist/bench/transport.bench.js && node dist/bench/sim-link.bench.js",
+    "chaos": "pnpm run build && node dist/bench/chaos.bench.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "clean": "rimraf dist"

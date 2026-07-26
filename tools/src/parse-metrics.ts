@@ -125,6 +125,9 @@ const HIGHER_IS_BETTER = [
   // budget is a floor, and a simulator that started drifting would otherwise
   // report the drift as an improvement.
   'determinism',
+  // Frames per chaos profile (T2.6): the size of the run itself. Shrinking the
+  // suite is the regression; running more frames is not.
+  'frames_per_profile',
 ];
 
 function isHigherBetter(name: string): boolean {

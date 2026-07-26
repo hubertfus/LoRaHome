@@ -38,6 +38,17 @@ export interface LinkProfile {
   latencyMs?: number;
   /** Uniform extra delay on top of `latencyMs`. */
   jitterMs?: number;
+  /**
+   * Which direction the impairments apply to. Defaults to both.
+   *
+   * A real link damages traffic in both directions, and that is the honest
+   * default. `'atob'` exists for one specific comparison: published delivery
+   * figures — including the ones in this project's own roadmap — are usually
+   * computed with reliable acknowledgements, and a number measured under a
+   * different model than the one it is compared against is worse than no number.
+   * Both are measured; neither is presented as the other.
+   */
+  impairDirection?: 'both' | 'atob' | 'btoa';
 }
 
 export interface SimLinkStats {
@@ -131,6 +142,7 @@ export class SimLink {
       // makes every timeout look generous.
       latencyMs: profile.latencyMs ?? 390,
       jitterMs: profile.jitterMs ?? 0,
+      impairDirection: profile.impairDirection ?? 'both',
     };
 
     // Seed 0 would leave xorshift stuck at zero for ever — every draw identical,
@@ -163,10 +175,29 @@ export class SimLink {
     if (this.traceLog !== null) this.traceLog.push(`${this.clockMs}:${event}`);
   }
 
+  /** Whether this delivery direction is subject to the profile's impairments. */
+  private impaired(target: 'a' | 'b'): boolean {
+    if (this.profile.impairDirection === 'both') return true;
+    return this.profile.impairDirection === 'atob' ? target === 'b' : target === 'a';
+  }
+
   /** @internal — SimEndpoint.send routes here. */
   enqueue(target: 'a' | 'b', frame: Uint8Array): void {
     this.counters.sent++;
     const ordinal = this.ordinal++;
+
+    if (!this.impaired(target)) {
+      // Latency still applies: a direction can be reliable without being
+      // instantaneous, and an ACK that returns in zero time would hide every
+      // timing bug the ARQ could have.
+      this.queue.push({
+        dueMs: this.clockMs + this.profile.latencyMs,
+        ordinal,
+        target,
+        payload: Buffer.from(frame),
+      });
+      return;
+    }
 
     if (this.profile.lossPct > 0 && this.percent() < this.profile.lossPct) {
       this.counters.dropped++;

@@ -36,6 +36,9 @@ const STEPS = [
   { id: 'bridge-stat', command: 'node tools/check-bridge-stat.mjs' },
   { id: 'protocol-bench', command: 'pnpm --filter @lorahome/protocol bench' },
   { id: 'host-bench', command: 'pnpm --filter @lorahome/host bench' },
+  // The 100k-frame reliability run. Last because it is the longest step, and
+  // because everything above it is what the chaos suite is exercising.
+  { id: 'chaos', command: 'pnpm --filter @lorahome/host chaos' },
 ];
 
 /** Parses `LH_METRIC <name> value=<v> [unit=<u>] [budget=<b>]` and probe lines. */
