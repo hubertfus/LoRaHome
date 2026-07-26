@@ -32,6 +32,7 @@ const STEPS = [
   { id: 'slip-cross', command: 'node tools/check-slip-cross.mjs' },
   { id: 'dedup-cross', command: 'node tools/check-dedup-cross.mjs' },
   { id: 'frag-cross', command: 'node tools/check-frag-cross.mjs' },
+  { id: 'arq-cross', command: 'node tools/check-arq-cross.mjs' },
   { id: 'bridge-stat', command: 'node tools/check-bridge-stat.mjs' },
   { id: 'protocol-bench', command: 'pnpm --filter @lorahome/protocol bench' },
   { id: 'host-bench', command: 'pnpm --filter @lorahome/host bench' },

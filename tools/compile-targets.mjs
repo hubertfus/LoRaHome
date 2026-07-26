@@ -75,6 +75,22 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'arq',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'arq.c'),
+    measureText: true,
+    textBudget: 1024, // T2.4
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
+    // Compile-only: exists so the reliability layer's 2304 B budget is checked
+    // on every ABI. Its .text is the stub that keeps the instance alive and
+    // means nothing.
+    id: 'reliability_ctx',
+    path: join(REPO_ROOT, 'firmware', 'common', 'test', 'test_reliability_ctx.c'),
+    measureText: false,
+    extraFlags: ['-Os'],
+  },
+  {
     id: 'frag',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'frag.c'),
     measureText: true,

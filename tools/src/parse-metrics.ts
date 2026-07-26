@@ -115,6 +115,12 @@ const HIGHER_IS_BETTER = [
   'unity.native.cases',
   '.checks',
   'property_events',
+  // Delivery rates and the jitter spread, both introduced by the ARQ in T2.4.
+  // Their budgets are floors: 99% delivered is a failure against a 99.9% floor,
+  // and a jitter standard deviation *below* 100 ms is the retransmission storm
+  // of R2.2 waiting for a power cut.
+  'delivery',
+  'jitter_stddev',
 ];
 
 function isHigherBetter(name: string): boolean {
