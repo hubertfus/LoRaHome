@@ -142,6 +142,17 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'bme680',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'bme680.c'),
+    measureText: true,
+    // 4096 rather than the roadmap's 6 kB per-driver ceiling (R3.7): the
+    // compensation arithmetic is the bulk of it and it is not going to grow.
+    // The 64-bit intermediates matter here — on a 32-bit target each one pulls
+    // in a libgcc helper, and this is where that shows up as bytes.
+    textBudget: 4096, // T3.3
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'i2c_scan',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'i2c_scan.c'),
     measureText: true,
