@@ -205,6 +205,37 @@ test('a rise in a higher-is-better metric does not', () => {
   assert.equal(result.passed, true);
 });
 
+test('adding test cases is an improvement, deleting them is the regression', () => {
+  // Etap 2 added a Unity suite and took the native run from 22 cases to 30.
+  // Under the default lower-is-better rule that is a 36% "regression" — a build
+  // failing because more of the firmware is tested. The direction has to be the
+  // other way round for counts of verification performed.
+  const more = evaluateGate(parseMetrics('LH_METRIC test.unity.native.cases value=30'), {
+    'test.unity.native.cases': 22,
+  });
+  assert.equal(more.passed, true);
+  assert.equal(more.regressions.length, 0);
+
+  const fewer = evaluateGate(parseMetrics('LH_METRIC test.unity.native.cases value=12'), {
+    'test.unity.native.cases': 22,
+  });
+  assert.equal(fewer.passed, false);
+
+  // Same for the assertion counts the native harnesses report.
+  const weakened = evaluateGate(parseMetrics('LH_METRIC test.slip.checks value=10'), {
+    'test.slip.checks': 40,
+  });
+  assert.equal(weakened.passed, false);
+});
+
+test('a failure count stays lower-is-better even next to its check count', () => {
+  // `test.slip.checks` is higher-is-better and `test.slip.failures` must not be
+  // swept along with it by a sloppy suffix match.
+  const result = evaluateGate(parseMetrics('LH_METRIC test.slip.failures value=3 budget=0'), {});
+  assert.equal(result.passed, false);
+  assert.equal(result.breaches.length, 1);
+});
+
 test('REGRESSION-JUSTIFIED allows a regression but never a budget breach', () => {
   const baseline = { 'bench.parse': 100 };
 

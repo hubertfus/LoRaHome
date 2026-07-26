@@ -107,6 +107,14 @@ const HIGHER_IS_BETTER = [
   'images_linked',
   'e2e_frames',
   'succeeded',
+  // Test suites and assertion counts, same argument one step further. Adding a
+  // Unity suite took the native run from 22 cases to 30, which the default
+  // lower-is-better rule read as a 36% regression — a green build failing
+  // because more of the firmware is now tested. The inverse is the real risk:
+  // deleting a suite should be what trips the gate.
+  'unity.native.cases',
+  '.checks',
+  'property_events',
 ];
 
 function isHigherBetter(name: string): boolean {
