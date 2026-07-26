@@ -35,7 +35,16 @@ const OPT_FLAGS = {
 };
 
 const WARNING_FLAGS = {
-  gnu: ['-std=c11', '-Wall', '-Wextra', '-Werror'],
+  // _POSIX_C_SOURCE because every harness times something with clock_gettime,
+  // and that is POSIX rather than ISO C. Under -std=c11 glibc exposes only the
+  // ISO surface, so the declaration disappears and -Werror turns the implicit
+  // one into a build failure. newlib (the ESP toolchains) and MSYS2's UCRT
+  // expose it regardless, which is exactly why this builds on a Windows
+  // developer machine and on both cross targets, and fails only on the Linux
+  // runner. mem_probe.c carries the same macro in its own source, from the
+  // first time this bit us; putting it here means the next harness cannot
+  // forget it.
+  gnu: ['-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror'],
   // /W4 is MSVC's rough equivalent of -Wall -Wextra; /WX is -Werror.
   msvc: ['/nologo', '/std:c11', '/W4', '/WX'],
 };

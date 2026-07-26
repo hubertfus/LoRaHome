@@ -88,12 +88,26 @@ export class BridgeHealthClient {
     );
 
     return new Promise<BridgeStat | null>((resolve) => {
+      /*
+       * Deliberately *not* unref'd.
+       *
+       * It was, on the reasoning that a health poll should never hold the
+       * process open at the end of a run. But this timer is the only thing
+       * keeping the event loop alive while a reply is outstanding, and an
+       * unref'd one lets the loop drain with the promise still pending — Node
+       * then reports "Promise resolution is still pending but the event loop
+       * has already resolved" and the await never returns. It surfaced in CI as
+       * three cancelled tests; on a developer machine the loop usually has
+       * other work and the bug hides.
+       *
+       * Holding the process open is not a real cost either way: the timer is
+       * cleared on every completion path below, so the longest it can outlive a
+       * finished poll is zero.
+       */
       const timer = setTimeout(() => {
         this.pending.delete(seq);
         resolve(null);
       }, this.timeoutMs);
-      // Never let a health poll hold the process open at the end of a run.
-      timer.unref?.();
 
       this.pending.set(seq, (stat) => {
         clearTimeout(timer);
