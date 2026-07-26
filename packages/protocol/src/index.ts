@@ -1,3 +1,5 @@
+export * from './cbor.js';
+export * from './capability.js';
 export * from './crc16.js';
 export * from './dedup.js';
 export * from './fragment.js';

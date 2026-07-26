@@ -1,0 +1,71 @@
+{
+  "_comment": [
+    "Golden vectors for the capability report (T3.5). These hex strings were",
+    "derived by hand from RFC 8949 §3 and the key assignment in capability.h —",
+    "not produced by running the encoder. That is the entire point of the file.",
+    "A round-trip test proves the two ends of one implementation agree with each",
+    "other; it says nothing about whether the bytes on the wire are the bytes",
+    "the protocol specifies. Regenerating these from the code would turn the",
+    "check into a tautology, so: never regenerate. If a vector fails, the",
+    "encoder changed, and that is a protocol change requiring a version bump."
+  ],
+  "_encoding": {
+    "outer": "map(3) { 1: fw_version, 2: free_heap_kb, 3: [components] }",
+    "component": "array(5) [type_id, bus_addr, bus_type, channel_count, flags]",
+    "why_positional": [
+      "A map per component would cost five key bytes each — forty bytes over",
+      "eight components against a hundred-byte budget — to describe a shape the",
+      "protocol fixes and which could not be reordered anyway."
+    ]
+  },
+  "cases": [
+    {
+      "name": "empty report",
+      "report": { "fwVersion": 1, "freeHeapKb": 0, "components": [] },
+      "hex": "A3010102000380",
+      "bytes": 7,
+      "derivation": "A3 map(3) | 01 key | 01 fw=1 | 02 key | 00 heap=0 | 03 key | 80 array(0)"
+    },
+    {
+      "name": "a BME680 and a GPIO, as a real node reports them",
+      "report": {
+        "fwVersion": 262144,
+        "freeHeapKb": 192,
+        "components": [
+          { "driverTypeId": 16, "busAddr": 118, "busType": 0, "channelCount": 4, "flags": 1 },
+          { "driverTypeId": 17, "busAddr": 4, "busType": 1, "channelCount": 2, "flags": 0 }
+        ]
+      },
+      "hex": "A3011A000400000218C0038285101876000401851104010200",
+      "bytes": 25,
+      "derivation": [
+        "A3 map(3)",
+        "01 key | 1A 00040000  fw=262144 needs the 4-byte argument form",
+        "02 key | 18 C0        heap=192 is above 23, so one extra byte",
+        "03 key | 82 array(2)",
+        "  85 array(5) | 10 type=16 | 18 76 addr=0x76 above 23 | 00 i2c | 04 ch | 01 configured",
+        "  85 array(5) | 11 type=17 | 04 pin 4 | 01 gpio | 02 ch | 00 flags"
+      ]
+    },
+    {
+      "name": "every field sitting on the 23/24 argument-width seam",
+      "report": {
+        "fwVersion": 23,
+        "freeHeapKb": 24,
+        "components": [
+          { "driverTypeId": 24, "busAddr": 23, "busType": 0, "channelCount": 1, "flags": 0 }
+        ]
+      },
+      "hex": "A30117021818038185181817000100",
+      "bytes": 15,
+      "derivation": [
+        "The boundary that matters for canonical encoding: 23 is carried in the",
+        "initial byte, 24 needs a following byte. Two encoders that disagree",
+        "here produce different wire bytes for the same report and still pass",
+        "every round-trip test either of them runs alone.",
+        "A3 | 01 17 fw=23 inline | 02 1818 heap=24 spills | 03 81 array(1)",
+        "  85 | 1818 type=24 spills | 17 addr=23 inline | 00 | 01 | 00"
+      ]
+    }
+  ]
+}

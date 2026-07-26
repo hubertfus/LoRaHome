@@ -32,6 +32,7 @@
     "check:frag": "node tools/check-frag-cross.mjs",
     "check:arq": "node tools/check-arq-cross.mjs",
     "check:bridge-stat": "node tools/check-bridge-stat.mjs",
+    "check:capability": "node tools/check-capability-cross.mjs",
     "soak": "pnpm --filter @lorahome/tools build && node tools/dist/src/soak/link-soak-cli.js",
     "soak:selfcheck": "pnpm --filter @lorahome/tools build && node tools/dist/src/soak/link-soak-cli.js --loopback --duration 30s --interval 100ms --warmup 5s --timeout 2s --label soak.loopback",
     "chaos": "pnpm --filter @lorahome/host chaos",

@@ -34,6 +34,7 @@ const STEPS = [
   { id: 'frag-cross', command: 'node tools/check-frag-cross.mjs' },
   { id: 'arq-cross', command: 'node tools/check-arq-cross.mjs' },
   { id: 'bridge-stat', command: 'node tools/check-bridge-stat.mjs' },
+  { id: 'capability-cross', command: 'node tools/check-capability-cross.mjs' },
   { id: 'protocol-bench', command: 'pnpm --filter @lorahome/protocol bench' },
   { id: 'host-bench', command: 'pnpm --filter @lorahome/host bench' },
   // The 100k-frame reliability run. Last because it is the longest step, and

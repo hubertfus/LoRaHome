@@ -142,6 +142,36 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'cbor',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'cbor.c'),
+    measureText: true,
+    // The whole reason CBOR beat protobuf for this project is 1 byte of
+    // overhead per field instead of 2 to 4. That saving is only worth having if
+    // the codec itself stays small, so its size is a tracked budget rather than
+    // an afterthought.
+    //
+    // 2048 against a measured 1454 on riscv32 and 1154 on xtensa. 1024 was
+    // written here first as a guess and breached on all three targets — for
+    // scale, nanopb is 2-4 kB for the equivalent, so this codec is doing well
+    // and the guess was simply wrong about what a writer, a reader and a
+    // bounded skipper cost.
+    textBudget: 2048, // T3.5
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
+    id: 'capability',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'capability.c'),
+    measureText: true,
+    // 1536 against a measured 1024 on the host and 890 on riscv32. A budget
+    // sitting exactly on the measurement, which 1024 was, fails on the next
+    // comment-sized change rather than on a regression.
+    textBudget: 1536, // T3.5
+    // Carries the _Static_assert on sizeof(lh_capability_t) == 6. A uint16_t
+    // next to four bytes is exactly what a target's alignment rules can turn
+    // into 8, and the 6-byte layout is a protocol contract the host mirrors.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'gpio_digital',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'gpio_digital.c'),
     measureText: true,
