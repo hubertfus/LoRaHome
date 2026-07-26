@@ -60,6 +60,14 @@ jobs:
       - name: Test
         run: pnpm -r test
 
+      # The reliability suite at full size: 100k frames through five link
+      # profiles. `pnpm -r test` already runs it at 2k frames, which guards the
+      # invariant; this is the measured run, and it exists here rather than in a
+      # nightly job because 2.3 s is cheap and a suite that runs nightly stops
+      # preventing bad merges and starts documenting them.
+      - name: Chaos suite (100k frames x 5 profiles)
+        run: pnpm chaos
+
       # Drives the soak harness against its in-process loopback. The real run
       # takes a day and two boards; this checks the arithmetic that has to be
       # right unattended — loss accounting, late arrivals, heap drift, reboot
@@ -160,6 +168,21 @@ jobs:
       # both directions instead of by discipline.
       - name: Cross-language SLIP (C vs TypeScript)
         run: node tools/check-slip-cross.mjs
+
+      # The three Etap 2 components each exist twice — once in C on the device,
+      # once in TypeScript on the Host — for the same unavoidable reason as
+      # SLIP. A drift between a pair would not error: both halves would keep
+      # working and simply disagree about which frames are duplicates, or when
+      # to retransmit. That is a month of blaming the radio, so each pair is
+      # held together by evidence instead of by discipline.
+      - name: Cross-language dedup window (C vs TypeScript)
+        run: node tools/check-dedup-cross.mjs
+
+      - name: Cross-language fragmentation (C vs TypeScript)
+        run: node tools/check-frag-cross.mjs
+
+      - name: Cross-language ARQ state machine (C vs TypeScript)
+        run: node tools/check-arq-cross.mjs
 
       # The Bridge encodes its health readout in C and the Host decodes it in
       # TypeScript. A field-order disagreement here would not error — it would
