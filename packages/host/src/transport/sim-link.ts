@@ -19,6 +19,21 @@
  * milliseconds, and — more importantly — the clock never moves except where
  * the test says it does, so a timeout tested here is tested exactly.
  */
+import { computeAirtimeMs } from '../duty-cycle-guard/airtime.js';
+
+/**
+ * Default one-way delay: a full frame's time on air at the Etap 1 profile.
+ *
+ * Computed, not written down. The 390 ms figure that circulated through the
+ * planning notes is an SF7 number; at SF9/BW125/CR4-5 a 230 B frame occupies
+ * the air for 1147.9 ms, roughly three times as long (ARCHITECTURE.md §7.3).
+ * Deriving it here means a simulator sized against that mistake cannot exist —
+ * and a link that returned frames three times faster than the radio can would
+ * make every retransmission timeout in the system look comfortable.
+ */
+export const DEFAULT_LATENCY_MS = Math.round(
+  computeAirtimeMs({ bytes: 230, spreadingFactor: 9, bandwidthHz: 125_000 }),
+);
 
 /** What a caller of SimEndpoint sees. Deliberately the shape SerialTransport has. */
 export type SimFrameListener = (frame: Buffer) => void;
@@ -34,7 +49,7 @@ export interface LinkProfile {
   reorderPct?: number;
   /** Frames delivered twice: the retransmission that was not needed. */
   duplicatePct?: number;
-  /** One-way delay before jitter. Defaults to an SF9 frame's airtime. */
+  /** One-way delay before jitter. Defaults to DEFAULT_LATENCY_MS. */
   latencyMs?: number;
   /** Uniform extra delay on top of `latencyMs`. */
   jitterMs?: number;
@@ -136,11 +151,10 @@ export class SimLink {
       corruptPct: profile.corruptPct ?? 0,
       reorderPct: profile.reorderPct ?? 0,
       duplicatePct: profile.duplicatePct ?? 0,
-      // 390 ms is a 230 B frame at SF9 — see ARCHITECTURE.md §7.3. Defaulting to
-      // it means a test that sets no latency still runs against the timing the
-      // radio actually has, rather than against an instantaneous link that
-      // makes every timeout look generous.
-      latencyMs: profile.latencyMs ?? 390,
+      // A test that sets no latency still runs against the timing the radio
+      // actually has, rather than against an instant link that makes every
+      // timeout look generous.
+      latencyMs: profile.latencyMs ?? DEFAULT_LATENCY_MS,
       jitterMs: profile.jitterMs ?? 0,
       impairDirection: profile.impairDirection ?? 'both',
     };

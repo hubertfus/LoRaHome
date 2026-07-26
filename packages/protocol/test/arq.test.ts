@@ -73,7 +73,9 @@ test('a dead link gives up after five retransmissions and frees the slot', () =>
   let retransmits = 0;
   let action = ArqAction.NOTHING;
 
-  for (let step = 0; step < 200; step++) {
+  // 400 seconds of virtual time: 4+8+16+32+64 s of backoff, plus one more
+  // timeout before the give-up is decided.
+  for (let step = 0; step < 400; step++) {
     now += 1_000_000;
     action = arq.tick(now).action;
     if (action === ArqAction.RETRANSMIT) retransmits++;

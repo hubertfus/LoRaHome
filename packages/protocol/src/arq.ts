@@ -19,7 +19,18 @@
 import { LORA_MTU } from './frame.js';
 
 export const ARQ_MAX_RETRIES = 5;
-export const ARQ_BASE_TIMEOUT_MS = 2000;
+
+/**
+ * First retransmission timeout, in ms. Derived, not chosen.
+ *
+ * A 230 B frame at SF9 is 1147.9 ms on air, so a round trip cannot complete in
+ * under 2295.8 ms on a perfect link. The roadmap's 2000 ms was sized against a
+ * 390 ms figure that turned out to be SF7, and guarantees the timeout fires
+ * while the ACK is still in the air — measured at 0.6 wasted retransmissions
+ * per frame on a clean link. 4000 ms is that floor plus headroom; the schedule
+ * is 4, 8, 16, 32, 64 s. Must stay identical to LH_ARQ_BASE_TIMEOUT_MS.
+ */
+export const ARQ_BASE_TIMEOUT_MS = 4000;
 export const ARQ_JITTER_MS = 500;
 
 /** How long a duty-cycle-deferred retry waits before asking again. */

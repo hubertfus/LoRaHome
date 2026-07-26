@@ -13,8 +13,8 @@ extern "C" {
  * Stop-and-wait ARQ with exponential backoff and jitter. Roadmap T2.4.
  *
  * Stop-and-wait rather than a sliding window, and not because it is easier:
- * one frame at SF9 is 390 ms on air, and the ETSI duty cycle permits roughly
- * one such frame every two minutes. There is never a second frame in flight to
+ * one frame at SF9 is 1147.9 ms on air, and the ETSI duty cycle permits roughly
+ * one such frame every 115 s. There is never a second frame in flight to
  * manage, so a window would be state kept for a situation that cannot arise —
  * about ten times the bookkeeping for no delivery it could have improved.
  *
@@ -33,7 +33,25 @@ extern "C" {
  */
 
 #define LH_ARQ_MAX_RETRIES 5u
-#define LH_ARQ_BASE_TIMEOUT_MS 2000u
+
+/**
+ * First retransmission timeout, in ms.
+ *
+ * Derived, not chosen. A 230 B frame at SF9/BW125/CR4-5 is 1147.9 ms on air
+ * (ARCHITECTURE.md §7.3), so a frame and its acknowledgement cannot complete a
+ * round trip in less than 2295.8 ms even on a perfect link with an instant
+ * peer. The roadmap's 2000 ms predates that correction — it was sized against
+ * the 390 ms figure that turned out to be SF7 — and it guarantees that the
+ * timeout fires while the ACK is still in the air. Measured: 0.6 spurious
+ * retransmissions per frame on a *clean* link, each one 1147.9 ms of airtime
+ * against a 1% duty cycle.
+ *
+ * 4000 ms is that floor plus ~74% headroom for the peer's turnaround and a
+ * frame arriving at the far end of the jitter window. The schedule that follows
+ * is 4, 8, 16, 32, 64 s.
+ */
+#define LH_ARQ_BASE_TIMEOUT_MS 4000u
+
 #define LH_ARQ_JITTER_MS 500u
 
 typedef enum {

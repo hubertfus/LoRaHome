@@ -431,10 +431,26 @@ IDLE ──send()──▶ WAIT_ACK ──ack──▶ DONE ──send()──�
 ```
 
 Stop-and-wait rather than a sliding window, deliberately: one frame at SF9 is
-390 ms on air and the duty cycle permits roughly one every two minutes, so there
-is never a second frame in flight to manage.
+**1147.9 ms** on air (§7.3) and the duty cycle permits roughly one every 115 s,
+so there is never a second frame in flight to manage.
 
-`timeout(n) = 2000 ms × 2ⁿ + rand(0, 500 ms)`. The jitter is not cosmetic. Without
+`timeout(n) = 4000 ms × 2ⁿ + rand(0, 500 ms)`, giving 4, 8, 16, 32, 64 s.
+
+The base is derived, not chosen. A frame and its acknowledgement cannot complete
+a round trip in under **2295.8 ms** even on a perfect link with an instant peer,
+so the 2000 ms in the planning notes — sized against the 390 ms SF7 figure §7.3
+corrects — guaranteed that the first timeout fired while the ACK was still in
+the air. Measured before the fix: **0.6 spurious retransmissions per frame on a
+clean link**, each one 1147.9 ms of airtime spent against a 1% duty cycle.
+
+> **Open item for Etap 4.** The full retry schedule spans 124 s, while an
+> incomplete reassembly is expired after 30 s (§9.2). A config fragment that
+> needs more than two retransmissions will therefore outlive the receiver's
+> window. Both numbers come from the roadmap and both were sized before the
+> airtime correction; reconciling them belongs with the config OTA work that
+> will actually exercise the path, not here.
+
+The jitter is not cosmetic. Without
 it, every node that lost its link at the same moment retransmits at the same
 moment, collides, backs off in lockstep and collides again — a retransmission
 storm that sustains itself after the cause is gone (R2.2). The distribution is

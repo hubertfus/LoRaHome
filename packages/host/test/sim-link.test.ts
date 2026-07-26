@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LINK_PROFILES, SimLink } from '../src/transport/sim-link.js';
+import { DEFAULT_LATENCY_MS, LINK_PROFILES, SimLink } from '../src/transport/sim-link.js';
 
 /**
  * Tests for the link simulator (T2.5).
@@ -43,14 +43,19 @@ test('a clean link delivers everything, in order, unchanged', () => {
 });
 
 test('a frame is delivered after the link latency, not before', () => {
-  // Default latency is a 230 B frame at SF9. A test that got its frames back
-  // instantly would make every timeout in the ARQ look generous.
+  // The default is a 230 B frame's real time on air at SF9 — 1148 ms, computed
+  // from the airtime module rather than written down, because the 390 ms figure
+  // that circulated in planning is an SF7 number. A simulator that returned
+  // frames three times faster than the radio can would make every timeout in
+  // the system look comfortable.
   const link = new SimLink({ seed: 0x1234 });
   const received: Buffer[] = [];
   link.b.onFrame((frame) => received.push(frame));
 
+  assert.equal(DEFAULT_LATENCY_MS, 1148);
+
   link.a.send(frameOf(16));
-  link.advance(389);
+  link.advance(DEFAULT_LATENCY_MS - 1);
   assert.equal(received.length, 0, 'nothing arrives before the airtime has elapsed');
   link.advance(1);
   assert.equal(received.length, 1);

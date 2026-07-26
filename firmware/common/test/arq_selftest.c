@@ -159,7 +159,12 @@ static void test_gives_up_on_a_dead_link(void) {
   int retransmits = 0;
   lh_arq_action_t action = LH_ARQ_NOTHING;
 
-  for (int step = 0; step < 200; step++) {
+  /* 400 seconds of virtual time. The schedule is 4+8+16+32+64 = 124 s of
+   * backoff, and the give-up decision comes one further timeout after the last
+   * retransmission — ~190 s with jitter and one-second tick granularity. A cap
+   * sized to the old 2 s base would fail here as "did not give up", which is a
+   * statement about the harness, not the code. */
+  for (int step = 0; step < 400; step++) {
     now += 1000000; /* one second at a time */
     const uint8_t *frame = NULL;
     uint16_t len = 0;
@@ -266,7 +271,10 @@ static delivery_t run_delivery(int loss_pct, int transfers, bool bidirectional) 
     bool frame_arrived = (int)(next_random() % 100u) >= loss_pct;
     out.attempts++;
 
-    for (int step = 0; step < 64 && g_arq.state == LH_ARQ_WAIT_ACK; step++) {
+    /* 300 one-second steps: the full backoff schedule is 4+8+16+32+64 = 124 s
+     * plus jitter, and a cap below that would report a timing artefact of the
+     * harness as a delivery failure of the code. */
+    for (int step = 0; step < 300 && g_arq.state == LH_ARQ_WAIT_ACK; step++) {
       if (frame_arrived) {
         /* It reached the peer, which answers once. If that ACK is lost, nothing
          * further arrives until the sender retransmits — re-rolling the ACK on

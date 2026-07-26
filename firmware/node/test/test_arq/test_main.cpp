@@ -77,7 +77,9 @@ void test_gives_up_after_five_retries(void) {
   int retransmits = 0;
   lh_arq_action_t action = LH_ARQ_NOTHING;
 
-  for (int step = 0; step < 200; step++) {
+  // 400 s of virtual time: the schedule is 4+8+16+32+64 s of backoff, and the
+  // give-up comes one further timeout after the last retransmission.
+  for (int step = 0; step < 400; step++) {
     now += 1000000;
     action = lh_arq_tick(&g_arq, now, nullptr, nullptr);
     if (action == LH_ARQ_RETRANSMIT) retransmits++;

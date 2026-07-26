@@ -26,7 +26,12 @@ import {
   FrameType,
 } from '@lorahome/protocol';
 
-import { LINK_PROFILES, SimLink, type LinkProfile, type LinkProfileName } from '../transport/sim-link.js';
+import {
+  LINK_PROFILES,
+  SimLink,
+  type LinkProfile,
+  type LinkProfileName,
+} from '../transport/sim-link.js';
 
 export interface ChaosOptions {
   profile: LinkProfileName;
@@ -100,7 +105,6 @@ export function runChaos(options: ChaosOptions): ChaosResult {
   const linkProfile: LinkProfile = {
     seed,
     ...LINK_PROFILES[profile],
-    latencyMs: 390,
     ...(lossyAcks ? {} : { impairDirection: 'atob' as const }),
     ...(options.overrides ?? {}),
   };
