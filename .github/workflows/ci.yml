@@ -191,6 +191,23 @@ jobs:
       - name: Cross-language bridge stat payload (C vs TypeScript)
         run: node tools/check-bridge-stat.mjs
 
+      # The node encodes its capability report in C and the Host decodes it in
+      # TypeScript, over a CBOR subset implemented twice. The comparison is on
+      # bytes as well as on values, which only means anything because both sides
+      # encode canonically — two encoders picking different argument widths for
+      # the same number would agree on every round trip and disagree on the air.
+      - name: Cross-language capability report (C vs TypeScript)
+        run: node tools/check-capability-cross.mjs
+
+      # Risk R3.4, and the reason this is a step of its own rather than left to
+      # `bench:all`: the collector keeps going when a step fails, because it is
+      # gathering numbers rather than gating. A manifest and a driver disagreeing
+      # about a type id produces no error anywhere at runtime — the node reports
+      # 16, the Host looks up 16, and readings arrive intact under the wrong
+      # names. If it does not fail the build here, nothing fails.
+      - name: Manifest <-> firmware coherence
+        run: node tools/check-manifest-coherence.mjs
+
       # ubuntu-latest ships gcc, so the host x86-64 ABI and the native
       # cross-language CRC comparison both run here — neither can run on a
       # developer machine without a host toolchain.
