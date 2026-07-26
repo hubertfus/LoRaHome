@@ -77,6 +77,10 @@ const HARNESSES = [
     sources: [join(COMMON, 'test', 'driver_selftest.c'), join(COMMON, 'src', 'driver.c')],
   },
   {
+    id: 'i2c_scan',
+    sources: [join(COMMON, 'test', 'i2c_scan_selftest.c'), join(COMMON, 'src', 'i2c_scan.c')],
+  },
+  {
     id: 'bridge',
     sources: [
       join(COMMON, 'test', 'bridge_selftest.c'),

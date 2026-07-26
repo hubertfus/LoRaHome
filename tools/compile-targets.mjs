@@ -142,6 +142,17 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'i2c_scan',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'i2c_scan.c'),
+    measureText: true,
+    textBudget: 768, // T3.2
+    // Carries the assertion that ties the per-address timeout to the full-scan
+    // budget: 112 x LH_I2C_PROBE_TIMEOUT_MS must fit LH_I2C_SCAN_BUDGET_MS.
+    // Raising either one alone is meant to be a build failure, not a scan that
+    // quietly runs long on an empty bus.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'slip',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'slip.c'),
     measureText: true,
