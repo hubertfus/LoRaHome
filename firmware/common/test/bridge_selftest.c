@@ -167,6 +167,22 @@ static void test_validation_verdicts(void) {
   memcpy(corrupt, frame, len);
   corrupt[12] ^= 0x01;
   CHECK(lh_bridge_validate(corrupt, len) == LH_BRIDGE_REJECT_CRC, "a flipped bit is a CRC error");
+
+  /* T2.2: the ceiling is the MTU, not the receive buffer. One byte over is a
+   * length error even though the buffer would have held it. */
+  CHECK(lh_bridge_validate(frame, LORAHOME_MAX_FRAME_SIZE + 1) == LH_BRIDGE_REJECT_LEN,
+        "a frame past the MTU is a length error");
+
+  /* An unknown type is relayed. The Bridge is not the component that decides
+   * which frame types exist — a relay that refuses tomorrow's types is a relay
+   * that has to be reflashed before the network can be extended. */
+  uint8_t future[LH_BRIDGE_RADIO_BUF];
+  const lorahome_header_t future_header = {0x7F, 0x0102, 0x0304, 2, LORAHOME_FLAG_NONE};
+  const int future_len =
+      lorahome_encode_frame(&future_header, NULL, 0, future, sizeof future);
+  CHECK(future_len > 0, "could not build a frame of an unknown type");
+  CHECK(lh_bridge_validate(future, (uint16_t)future_len) == LH_BRIDGE_ACCEPT,
+        "an unknown frame type must still be forwarded");
 }
 
 /**
@@ -252,9 +268,10 @@ static long test_end_to_end(int frames) {
   long losses = 0;
 
   for (int i = 0; i < frames; i++) {
-    const uint16_t payload_len =
-        (uint16_t)(next_random() % (LH_BRIDGE_RADIO_BUF - LORAHOME_HEADER_SIZE -
-                                    LORAHOME_CRC_SIZE + 1));
+    /* Bounded by the MTU rather than by the receive buffer: as of T2.2 the
+     * frame path enforces one length limit, and it is the one the radio profile
+     * can actually carry. The buffer is 256 B and simply has slack. */
+    const uint16_t payload_len = (uint16_t)(next_random() % (LORAHOME_MAX_PAYLOAD + 1));
     const uint16_t len = make_frame(frame, payload_len, (uint8_t)i);
     if (len == 0) {
       CHECK(0, "could not build a frame of payload %u", (unsigned)payload_len);
@@ -290,7 +307,7 @@ static long test_end_to_end(int frames) {
 static void test_worst_case_frame_survives_the_path(void) {
   rig_init();
 
-  const uint16_t payload_len = LH_BRIDGE_RADIO_BUF - LORAHOME_HEADER_SIZE - LORAHOME_CRC_SIZE;
+  const uint16_t payload_len = LORAHOME_MAX_PAYLOAD;
   static uint8_t payload[LH_BRIDGE_RADIO_BUF];
   for (uint16_t i = 0; i < payload_len; i++) payload[i] = (i & 1) ? LH_SLIP_ESC : LH_SLIP_END;
 
@@ -487,8 +504,9 @@ static void bench_overhead(double *p50, double *p99) {
   double samples[ROUNDS];
 
   rig_init();
-  const uint16_t payload_len = LH_BRIDGE_RADIO_BUF - LORAHOME_HEADER_SIZE - LORAHOME_CRC_SIZE;
-  const uint16_t len = make_frame(frame, payload_len, 0);
+  /* A full-MTU frame: the most expensive one the path can legally carry, which
+   * is what an overhead budget should be measured against. */
+  const uint16_t len = make_frame(frame, LORAHOME_MAX_PAYLOAD, 0);
   const uint16_t wire_len = wrap(frame, len, wire, (uint16_t)sizeof wire);
 
   for (int i = 0; i < BATCH; i++) lh_bridge_feed_serial(&g_bridge_a, wire, wire_len);

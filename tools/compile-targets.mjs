@@ -75,6 +75,16 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'protocol',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'protocol.c'),
+    measureText: true,
+    textBudget: 1024, // T2.2 — the whole build/parse path, CRC excluded
+    // Carries the _Static_asserts tying LORAHOME_MAX_FRAME_SIZE to the 230 B
+    // MTU. The frame path is the one contract both languages and all three ABIs
+    // have to agree on byte for byte.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'dedup',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'dedup.c'),
     measureText: true,

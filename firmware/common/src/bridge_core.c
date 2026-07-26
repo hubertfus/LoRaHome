@@ -25,20 +25,38 @@ _Static_assert(sizeof(lh_bridge_ctx_t) < 2560, "bridge ctx budget breach");
 _Static_assert(LH_BRIDGE_TX_SERIAL_BUF >= LH_SLIP_ENCODED_MAX(LH_BRIDGE_RADIO_BUF),
                "serial TX buffer cannot hold a fully escaped radio frame");
 
+/*
+ * Validation is lh_frame_parse's job as of T2.2; this maps its verdict onto the
+ * Bridge's counters.
+ *
+ * The check order (length, magic, CRC) and the reason for it now live in
+ * protocol.c. What is decided here is what the Bridge does about each answer,
+ * and there is one deliberate difference from a Node: an unknown frame type is
+ * forwarded, not refused. The Bridge is a relay — it must not become the reason
+ * a frame type added next year cannot reach a device that understands it.
+ *
+ * The length ceiling moved with this change, from the 256 B receive buffer to
+ * the 230 B MTU. The two limits had quietly disagreed since Etap 1: the Host
+ * enforced the MTU and the Bridge enforced its buffer, so a 240 B frame was
+ * relayed onto the air and then rejected at the far end, spending the airtime
+ * to learn nothing. One limit, and it is the one the radio profile can carry.
+ */
 lh_bridge_verdict_t lh_bridge_validate(const uint8_t *frame, uint16_t len) {
-  if (len < LORAHOME_HEADER_SIZE + LORAHOME_CRC_SIZE) return LH_BRIDGE_REJECT_LEN;
-  if (len > LH_BRIDGE_RADIO_BUF) return LH_BRIDGE_REJECT_LEN;
+  lh_frame_view_t view;
 
-  /* Magic before CRC so the counters stay diagnostic. Somebody else's traffic
-   * would fail both checks, and calling that a CRC error would send whoever is
-   * reading the counters after an RF problem that does not exist. */
-  if (frame[0] != LORAHOME_MAGIC_VER) return LH_BRIDGE_REJECT_MAGIC;
-
-  const uint16_t body_len = (uint16_t)(len - LORAHOME_CRC_SIZE);
-  const uint16_t received = (uint16_t)((frame[body_len] << 8) | frame[body_len + 1]);
-  if (received != lorahome_crc16(frame, body_len)) return LH_BRIDGE_REJECT_CRC;
-
-  return LH_BRIDGE_ACCEPT;
+  switch (lh_frame_parse(frame, len, &view)) {
+    case LH_OK:
+    case LH_ERR_BAD_TYPE:
+      return LH_BRIDGE_ACCEPT;
+    case LH_ERR_BAD_MAGIC:
+      return LH_BRIDGE_REJECT_MAGIC;
+    case LH_ERR_BAD_CRC:
+      return LH_BRIDGE_REJECT_CRC;
+    case LH_ERR_TOO_SHORT:
+    case LH_ERR_TOO_LONG:
+    default:
+      return LH_BRIDGE_REJECT_LEN;
+  }
 }
 
 void lh_bridge_init(lh_bridge_ctx_t *ctx, lh_bridge_emit_fn to_radio, void *to_radio_user,
