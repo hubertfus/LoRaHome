@@ -1,18 +1,23 @@
 {
+  "$schema": "https://lorahome.dev/schema/manifest-v1.json",
   "id": "gpio_digital",
-  "bus": "gpio",
-  "params": [
-    { "key": "pin", "type": "uint8", "default": 4 },
-    { "key": "pull", "type": "enum", "options": ["none", "up", "down"], "default": "none" },
-    { "key": "active_low", "type": "bool", "default": false },
-    { "key": "warmup_ms", "type": "uint16", "default": 0 }
-  ],
-  "outputs": [
-    { "id": "state", "unit": "", "type": "bool" }
+  "driver_type_id": 17,
+  "display_name": "Digital Input",
+  "bus": { "type": "gpio" },
+  "warmup_ms": 0,
+  "min_interval_ms": 10,
+  "channels": [
+    { "index": 0, "id": "level", "unit": "", "scale": 1, "range": [0, 1] },
+    { "index": 1, "id": "transitions", "unit": "", "scale": 1, "range": [0, 2147483647] }
   ],
   "power": {
-    "active_ua": 5,
+    "active_ma": 0.005,
     "sleep_ua": 0,
-    "measurement_ms": 1
+    "measure_ms": 1
+  },
+  "ui": {
+    "icon": "toggle",
+    "color": "#3f8fd0",
+    "group": "inputs"
   }
 }

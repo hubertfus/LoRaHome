@@ -159,32 +159,62 @@ This distinction is fundamental, and getting it wrong leads to a mess in the cod
 
 ### Component manifests (JSON, live **only** on the Host/in the browser)
 
-A manifest describes a hardware component's **capabilities** — its parameters, outputs, power profile. The UI (node configuration form, energy calculator, rule editor) is generated **entirely** from the manifest, with zero sensor-specific code in the UI layer.
+A manifest describes a hardware component's **capabilities** — its channels, their scaling and plausible ranges, its power profile. The UI (node configuration form, energy calculator, rule editor) is generated **entirely** from the manifest, with zero sensor-specific code in the UI layer.
+
+Schema v1, as of Etap 3 (T3.6):
 
 ```json
 {
+  "$schema": "https://lorahome.dev/schema/manifest-v1.json",
   "id": "bme680",
-  "bus": "i2c",
-  "addresses": ["0x76", "0x77"],
-  "params": [
-    { "key": "oversampling_temp", "type": "enum", "options": [1, 2, 4, 8, 16], "default": 2 },
-    { "key": "warmup_ms", "type": "uint16", "default": 300 }
+  "driver_type_id": 16,
+  "display_name": "BME680 Environmental Sensor",
+  "bus": { "type": "i2c", "addresses": ["0x76", "0x77"] },
+  "warmup_ms": 200,
+  "min_interval_ms": 3000,
+  "channels": [
+    { "index": 0, "id": "temperature", "unit": "°C", "scale": 0.001, "range": [-40000, 85000] },
+    { "index": 1, "id": "humidity", "unit": "%", "scale": 0.001, "range": [0, 100000] },
+    { "index": 2, "id": "pressure", "unit": "hPa", "scale": 0.01, "range": [30000, 110000] },
+    { "index": 3, "id": "gas", "unit": "Ω", "scale": 1, "range": [0, 500000] }
   ],
-  "outputs": [
-    { "id": "temperature", "unit": "°C", "type": "float" },
-    { "id": "humidity", "unit": "%RH", "type": "float" },
-    { "id": "pressure", "unit": "hPa", "type": "float" },
-    { "id": "gas_resistance", "unit": "Ω", "type": "uint32" }
-  ],
-  "power": {
-    "active_ua": 3600,
-    "sleep_ua": 0.15,
-    "measurement_ms": 189
-  }
+  "power": { "active_ma": 12.1, "sleep_ua": 0.9, "measure_ms": 200 },
+  "ui": { "icon": "thermometer", "color": "#e07b39", "group": "environment" }
 }
 ```
 
+Three fields carry more weight than they look:
+
+- **`driver_type_id`** is the only thing tying this file to a driver, and it is
+  permanent. Nothing at runtime notices a mismatch — the node reports 16, the
+  host looks up 16, and readings arrive intact under the wrong names. See
+  [`docs/type-ids.md`](docs/type-ids.md) and risk R3.4.
+- **`scale`** is why a reading can be an `int32_t` everywhere that matters. The
+  firmware sends 23450; only the presentation layer multiplies. Putting the
+  factor here rather than in the node is what keeps a float out of the rule path.
+- **`range`** bounds the *raw integer*, and is a guard rather than a
+  calibration: a sensor that still answers its address and returns rubbish
+  produces values outside the band, and the rule engine refuses them (R3.6).
+
+`channels[].index` must be dense from zero, because the firmware addresses
+channels by position — a gap means `poll(ctx, out, 2)` returns something the
+manifest calls channel 3.
+
+Schema v1 has no `params` block. What a component *reports* is fixed by its
+driver; what it can be *told* is defined by the config engine in Etap 4.
+
 The manifest is **never sent over the radio in this form**. It's a capability description, from which the Host composes an integer-keyed CBOR payload — the mapping `"temperature"` → `1`, `"humidity"` → `2`, etc., happens once, in the Host→CBOR compiler, and is defined in [`packages/protocol`](packages/protocol).
+
+### Manifest ↔ firmware coherence
+
+`tools/check-manifest-coherence.mjs` compiles and *runs* the firmware's
+`LH_DRIVERS[]`, then compares `driver_type_id`, channel count, `warmup_ms` and
+`min_interval_ms` against every manifest. Any disagreement fails the build.
+
+It runs the registry rather than parsing `driver_registry.c` on purpose. The two
+differ exactly when it matters — a driver behind an `#ifdef`, a vtable built
+through a macro, a translation unit somebody excluded from the build — and a
+check that re-reads the source a human already read is not much of a check.
 
 ### CBOR payload (over radio, integer keys)
 

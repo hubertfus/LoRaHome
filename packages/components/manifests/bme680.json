@@ -1,21 +1,25 @@
 {
+  "$schema": "https://lorahome.dev/schema/manifest-v1.json",
   "id": "bme680",
-  "bus": "i2c",
-  "addresses": ["0x76", "0x77"],
-  "params": [
-    { "key": "oversampling_temp", "type": "enum", "options": [1, 2, 4, 8, 16], "default": 2 },
-    { "key": "oversampling_hum", "type": "enum", "options": [1, 2, 4, 8, 16], "default": 1 },
-    { "key": "warmup_ms", "type": "uint16", "default": 300 }
-  ],
-  "outputs": [
-    { "id": "temperature", "unit": "°C", "type": "float" },
-    { "id": "humidity", "unit": "%RH", "type": "float" },
-    { "id": "pressure", "unit": "hPa", "type": "float" },
-    { "id": "gas_resistance", "unit": "Ω", "type": "uint32" }
+  "driver_type_id": 16,
+  "display_name": "BME680 Environmental Sensor",
+  "bus": { "type": "i2c", "addresses": ["0x76", "0x77"] },
+  "warmup_ms": 200,
+  "min_interval_ms": 3000,
+  "channels": [
+    { "index": 0, "id": "temperature", "unit": "°C", "scale": 0.001, "range": [-40000, 85000] },
+    { "index": 1, "id": "humidity", "unit": "%", "scale": 0.001, "range": [0, 100000] },
+    { "index": 2, "id": "pressure", "unit": "hPa", "scale": 0.01, "range": [30000, 110000] },
+    { "index": 3, "id": "gas", "unit": "Ω", "scale": 1, "range": [0, 500000] }
   ],
   "power": {
-    "active_ua": 3600,
-    "sleep_ua": 0.15,
-    "measurement_ms": 189
+    "active_ma": 12.1,
+    "sleep_ua": 0.9,
+    "measure_ms": 200
+  },
+  "ui": {
+    "icon": "thermometer",
+    "color": "#e07b39",
+    "group": "environment"
   }
 }

@@ -5,16 +5,30 @@ import { ManifestForm } from './manifest-form/ManifestForm.js';
 import { SimulatorPanel } from './simulator/SimulatorPanel.js';
 import { TimeTravelSlider } from './time-travel/TimeTravelSlider.js';
 
+/**
+ * A manifest inlined for the scaffold, in schema v1.
+ *
+ * Kept byte-compatible with packages/components/manifests/bme680.json rather
+ * than loaded from it, because this page has no data layer yet. When Etap 6
+ * builds one, this constant goes and the manifests are loaded properly — an
+ * inlined copy is exactly the kind of second source of truth this project
+ * spends its effort eliminating everywhere else.
+ */
 const BME680_MANIFEST: ComponentManifest = {
   id: 'bme680',
-  bus: 'i2c',
-  addresses: ['0x76', '0x77'],
-  params: [
-    { key: 'oversampling_temp', type: 'enum', options: [1, 2, 4, 8, 16], default: 2 },
-    { key: 'warmup_ms', type: 'uint16', default: 300 },
+  driver_type_id: 16,
+  display_name: 'BME680 Environmental Sensor',
+  bus: { type: 'i2c', addresses: ['0x76', '0x77'] },
+  warmup_ms: 200,
+  min_interval_ms: 3000,
+  channels: [
+    { index: 0, id: 'temperature', unit: '°C', scale: 0.001, range: [-40000, 85000] },
+    { index: 1, id: 'humidity', unit: '%', scale: 0.001, range: [0, 100000] },
+    { index: 2, id: 'pressure', unit: 'hPa', scale: 0.01, range: [30000, 110000] },
+    { index: 3, id: 'gas', unit: 'Ω', scale: 1, range: [0, 500000] },
   ],
-  outputs: [{ id: 'temperature', unit: '°C', type: 'float' }],
-  power: { active_ua: 3600, sleep_ua: 0.15, measurement_ms: 189 },
+  power: { active_ma: 12.1, sleep_ua: 0.9, measure_ms: 200 },
+  ui: { icon: 'thermometer', color: '#e07b39', group: 'environment' },
 };
 
 export function App() {
