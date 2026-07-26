@@ -479,3 +479,106 @@ Two rules that are easy to get wrong and expensive to get wrong:
 Every impairment comes from a seeded generator, so a failure is a `seed=0x8f2a`
 that reproduces on a laptop rather than a story about a field test. `Math.random()`
 does not appear in any reliability test (R2.6).
+
+---
+
+## 10. Sensor layer (Etap 3)
+
+Adding a sensor is a new file, never a change to the main loop. That is a claim
+about coupling, and it only holds if the loop talks to every sensor through one
+shape. This section is that shape.
+
+### 10.1 The driver registry
+
+```c
+extern const lh_driver_vtable_t *const LH_DRIVERS[];
+extern const uint8_t LH_DRIVER_COUNT;
+```
+
+`firmware/common` declares the array; the image defines it. A node image
+supplies real drivers, a test image supplies mocks, and the dispatch layer knows
+about neither. It is a plain array in `driver_registry.c` rather than linker
+sections: section attributes work until a toolchain upgrade, and when they stop
+working they do it silently, with drivers simply not present.
+
+There is no registration call and nothing to allocate. A node that has been up
+for six weeks has exactly the drivers it booted with, in exactly the memory it
+booted with.
+
+### 10.2 `start_read` / `poll`, and why it is not optional
+
+A BME680 needs roughly 180 ms to finish a gas measurement. A blocking read would
+hold the cooperative loop for that whole time, which on this device does not
+mean "slow" — it means the radio's receive window closes unattended and frames
+are lost *only while a sensor happens to be measuring*. That is R3.1, and it is
+the worst class of fault to diagnose, because the symptom is in the radio and
+the cause is in the sensor.
+
+So the split is mandatory for every driver, including the ones that could answer
+instantly. A GPIO read gains nothing from it. The point is that the scheduler
+has no blocking path available to it at all, rather than one it is trusted not
+to take.
+
+| State | Meaning |
+|---|---|
+| `WARMUP` | initialised; the declared warmup has not elapsed, and the driver is not called |
+| `IDLE` | ready; no measurement in flight |
+| `READING` | `start_read` accepted; `poll` returns `NOT_READY` until the data lands |
+| `READY` | measurement complete; remaining channels collect from it without restarting the sensor |
+| `SLEEPING` | low power; waking goes back through `WARMUP` |
+| `FAULTED` | retired from the rotation; the bus is not touched again |
+
+`READY` is separate from `IDLE` so that a four-channel sensor takes one
+measurement and yields four samples, all stamped with the measurement's
+timestamp rather than the moment each was collected.
+
+### 10.3 Failure is expected, and is accounted for in one place
+
+`LH_DRV_ERR_NOT_READY` is not a failure. A warming sensor returns it for most of
+a second on every cycle, and counting it would retire the component within three
+polls — a bug that looks exactly like broken hardware.
+
+Everything else counts. Three consecutive errors retire a component: enough that
+a single NACK on a hot afternoon does not cost a working sensor, few enough that
+a shorted bus stops being hammered at full rate by eight components at once
+(R3.2). A failed `init` retires immediately, because a device that did not
+answer its initialisation will not answer the next two attempts either.
+
+Two asymmetries are deliberate and were both learned by getting them wrong:
+
+- **Only a reading clears the error count.** A successful `start_read` means an
+  I2C write was accepted, not that the component works. Clearing on it let a
+  permanently stuck sensor reset its own count every cycle, one call before
+  timing out again, and stay in the rotation for ever.
+- **A hard error ends the measurement.** Leaving the context in `READING` would
+  make the next `start_read` refuse with "already measuring", so a component
+  that hit one bus error would go silent and healthy-looking, with no counter
+  ever saying so.
+
+Recovery from `FAULTED` is explicit (`lh_driver_clear_fault`). A component that
+recovers by itself is one that silently re-enters the rotation, resetting the
+counter that was the only evidence anything was wrong.
+
+### 10.4 Readings are integers
+
+`lh_reading_t.value` is `int32_t`, never `float`. Temperature travels as
+milli-degrees, humidity as milli-percent, pressure as pascals; the scale factor
+lives in the JSON manifest, so the UI knows how to render it and the firmware
+never has to. Three reasons, in order of how much they matter: rules compare
+integers, so a comparison is deterministic across host and node; CBOR encodes a
+small integer in fewer bytes than a float, and at a 230 B MTU that is real
+throughput; and nothing in the critical path touches an FPU the ESP32-C3 does
+not have (R3.3).
+
+`quality` (0..100) exists for the zombie sensor (R3.6) — a device that still
+acknowledges its address and returns plausible rubbish. A driver that knows its
+reading is suspect says so, and the rule engine refuses to act on a zero-quality
+sample rather than clicking a relay at 3am on a number nobody checked.
+
+### 10.5 Budgets
+
+| Budget | Value | Where it is enforced |
+|---|---|---|
+| `sizeof(lh_driver_ctx_t)` | ≤ 64 B | `_Static_assert` in `driver.c`, compiled on all three ABIs |
+| `mem.registry.static` | ≤ 512 B | same assertion, stated as 8 × the context |
+| Per-instance scratch | 32 B, inside the context | `LH_DRIVER_SCRATCH_SIZE`; drivers own no heap (R3.5) |

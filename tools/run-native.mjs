@@ -70,6 +70,13 @@ const HARNESSES = [
     ],
   },
   {
+    // The registry array LH_DRIVERS[] is defined by the harness itself, with
+    // mock drivers. That is the design rather than a testing trick: firmware/
+    // common declares the array and the image supplies it.
+    id: 'driver',
+    sources: [join(COMMON, 'test', 'driver_selftest.c'), join(COMMON, 'src', 'driver.c')],
+  },
+  {
     id: 'bridge',
     sources: [
       join(COMMON, 'test', 'bridge_selftest.c'),

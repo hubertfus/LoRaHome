@@ -126,6 +126,22 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'driver',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'driver.c'),
+    measureText: true,
+    // 1280 rather than 1024, decided when the budget was set rather than after
+    // it broke: riscv32 measures 986 B, and 38 B of headroom is a budget that
+    // fails on the next comment-sized change instead of on a real regression.
+    // The frag budget learned this the expensive way — see its chore(budget)
+    // commit.
+    textBudget: 1280, // T3.1
+    // Carries the _Static_assert tying LH_MAX_COMPONENTS * sizeof(lh_driver_ctx_t)
+    // to the 512 B `mem.registry.static` budget. The context holds an int64_t
+    // next to four bytes, so how much of that budget it spends is decided by
+    // the target's alignment rules and by nothing the host build can see.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'slip',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'slip.c'),
     measureText: true,
