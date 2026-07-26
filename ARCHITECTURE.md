@@ -666,3 +666,56 @@ the poll interval, not drift.
 The starting level is adopted at bind without counting as a transition.
 Otherwise every reboot reports the door as having just opened, and reboots are
 when nobody is watching.
+
+### 10.7 The scheduler
+
+One number governs the design: **a tick must never take longer than 5 ms.** Not
+on average — ever.
+
+The radio's receive window is not something the scheduler can see. A tick that
+overruns closes it unattended, and the frames lost that way go missing *only
+while a sensor happens to be busy* — which presents as an intermittent radio
+fault and sends whoever is debugging it to read the wrong code for a day. That
+is R3.1, and the budget is the mechanism that prevents it.
+
+So the scheduler does **at most one non-blocking step per component per tick**,
+and the drivers underneath it have no blocking call to offer. Walk the
+components, give each one a single step, return. There is no loop inside it that
+waits for anything. The consequence is that the worst tick is bounded by the
+slowest *single* bus operation rather than by the sum of eight of them — which
+is what makes the on-target figure predictable from a datasheet instead of from
+a measurement nobody has taken yet.
+
+Multi-channel sensors collect one channel per tick for the same reason. Reading
+all four of a BME680's in a row would make the worst tick four operations long.
+
+**Fairness is round-robin from a rotating start.** A fixed sweep from zero
+services component 0 first on every single tick and component 7 only on ticks
+where nothing earlier had work. Under load that is a sensor which quietly stops
+reporting while its neighbours are fine — a fault that looks like bad hardware
+and is actually a for-loop.
+
+**Deadlines are absolute, not countdowns.** A tick that arrives late does not
+shift every future deadline by however late it was; a node whose loop stalls for
+a second catches up rather than drifting permanently.
+
+**A component that fails to initialise keeps its slot**, in the FAULTED state.
+The host asked for it, and "silently absent" is indistinguishable from "never
+configured" in every report the node produces. A component that errors is put
+back at its full interval rather than retried at tick rate — retrying a shorted
+bus every tick is how one dead sensor starves the seven that work.
+
+| Measured | Value | Budget |
+|---|---|---|
+| `bench.scheduler.tick.max` | 5.2 µs | 5000 µs |
+| `bench.scheduler.tick.p99` | 0.10 µs | — |
+| `bench.scheduler.budget_overruns` | 0 | 0 |
+| `metric.interval_accuracy` | 3.90% | ±10% |
+| `mem.scheduler.struct` | 1072 B | 1536 B |
+| `sched.max_driver_calls_per_tick` | 8 | 8 |
+
+Those timings are host figures with mock drivers, where a bus transaction costs
+nanoseconds. They demonstrate the structure, not the on-target cost. The number
+the DoD actually gates on — `metric.rx_window_missed == 0` with eight live
+components — needs a board with a radio on it and is reported SKIPPED until
+there is one.

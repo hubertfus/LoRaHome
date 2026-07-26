@@ -142,6 +142,17 @@ const UNITS = [
     extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
   },
   {
+    id: 'scheduler',
+    path: join(REPO_ROOT, 'firmware', 'common', 'src', 'scheduler.c'),
+    measureText: true,
+    textBudget: 1536, // T3.7
+    // Carries the _Static_assert on sizeof(lh_scheduler_t). The reading cache
+    // dominates it — 8 components x 4 channels x sizeof(lh_reading_t) — and
+    // lh_reading_t holds an int64_t next to bytes, so the total is decided by
+    // the target's alignment rules and not by the host that ran the tests.
+    extraFlags: ['-Os', '-ffunction-sections', '-fdata-sections'],
+  },
+  {
     id: 'cbor',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'cbor.c'),
     measureText: true,
