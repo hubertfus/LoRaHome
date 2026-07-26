@@ -94,7 +94,11 @@ const UNITS = [
     id: 'frag',
     path: join(REPO_ROOT, 'firmware', 'common', 'src', 'frag.c'),
     measureText: true,
-    textBudget: 1024, // T2.3
+    // 1280 rather than the 1024 this shipped with. See the chore(budget) commit:
+    // riscv32 came in at 1018 B on the CI toolchain — six bytes of headroom,
+    // which is a budget that fails on the next comment-sized change rather than
+    // on a real regression.
+    textBudget: 1280, // T2.3
     // Carries the _Static_assert on sizeof(lh_reassembler_t) — 1664 B of the
     // 2304 B reliability budget, and the one struct big enough that a target's
     // alignment rules could push it over on their own.
